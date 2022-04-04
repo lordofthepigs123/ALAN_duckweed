@@ -1,0 +1,73 @@
+---
+title: "initial_analyses"
+output: html_document
+date: '2022-04-04'
+author: Totoro
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Randomizing sampes
+
+Generate random sequence for assigning cups to ALAN and control groups
+```{r randomise, include=TRUE}
+set.seed(1111)
+ALAN_samples <- sort(sample(x = c(1:160), size = 80))
+```
+
+## Initial analyses
+
+### Light data
+```{r lights data, include=TRUE}
+light_day <- c(470,390,560.480,350,760,550,370)
+mean(light_day)
+sd(light_day)
+
+light_night_ALAN <- c(30,46,47,39)
+mean(light_night_ALAN)
+sd(light_night_ALAN)
+
+light_night_control <- c(0.2,0.2,0.2,0.2)
+mean(light_night_control)
+sd(light_night_control)
+
+```
+
+### Plan growth data.
+
+```{r load data, include=TRUE}
+dat <- read.csv(file = "ALAN Experiment Data.csv")
+str(dat)
+names(dat)
+dat$group <- as.factor(dat$group)
+```
+
+Use non-parametric Wilcoxon test to compare medians (without assuming that variances are equal).
+
+```{r compare medians, include=TRUE}
+dat$area <- dat$Total.Leaf.Area..cm2.
+wilcox.test(area ~ group, data = dat)
+wilcox.test(day.0.leaves ~ group, data = dat)
+wilcox.test(day.7.leaves ~ group, data = dat)
+wilcox.test(day.14.leaves ~ group, data = dat)
+wilcox.test(day.21.leaves ~ group, data = dat)
+wilcox.test(day.28.leaves ~ group, data = dat)
+wilcox.test(day.35.leaves ~ group, data = dat)
+```
+
+Use F-test to test for homogeneity of variances.
+
+```{r compare variances, include=TRUE}
+var.test(area ~ group, data = dat)
+var.test(day.0.leaves ~ group, data = dat)
+var.test(day.7.leaves ~ group, data = dat)
+var.test(day.14.leaves ~ group, data = dat)
+var.test(day.21.leaves ~ group, data = dat)
+var.test(day.28.leaves ~ group, data = dat)
+var.test(day.35.leaves ~ group, data = dat)
+```
+
