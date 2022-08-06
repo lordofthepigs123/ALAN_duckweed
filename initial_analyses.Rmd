@@ -37,7 +37,7 @@ sd(light_night_control)
 
 ```
 
-### Plan growth data.
+### Plant growth data.
 
 ```{r load data, include=TRUE}
 dat <- read.csv(file = "ALAN Experiment Data.csv")
@@ -70,4 +70,5 @@ var.test(day.21.leaves ~ group, data = dat)
 var.test(day.28.leaves ~ group, data = dat)
 var.test(day.35.leaves ~ group, data = dat)
 ```
+
 
