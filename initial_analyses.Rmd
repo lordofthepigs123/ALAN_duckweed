@@ -44,6 +44,8 @@ dat <- read.csv(file = "ALAN Experiment Data.csv")
 str(dat)
 names(dat)
 dat$group <- as.factor(dat$group)
+levels(dat$group)
+levels(dat$group) <- c("ALAN", "Control")
 ```
 
 Use non-parametric Wilcoxon test to compare medians (without assuming that variances are equal).
@@ -74,7 +76,27 @@ var.test(day.35.leaves ~ group, data = dat)
 ```{r boxplat}
 install.packages ("ggplot2")
 library(ggplot2)
+ 
+ggplot(dat, aes(x = group, y = area)) + 
+  geom_boxplot()
 
+ch <- ggplot(dat, aes(x = group, y = area, fill = group)) + 
+    geom_boxplot() +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "darkolivegreen2",
+    color = "green4",
+    size = 0.5, linetype = "solid"),
+#    panel.grid.major = element_line(size = 0.5, linetype = 'solid', color = "white"),
+#    panel.grid.minor = element_line(size = 0.25, linetype = 'solid', color = "white")
+  ) + 
+  labs(title = "Duckweed Surface Area") +
+  scale_fill_manual(values = c("darkgreen", "lightblue2")) +
+  labs(y = "area [cm^2]")
+
+ch
+                               
 ```
 
 
