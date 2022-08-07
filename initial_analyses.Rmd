@@ -71,4 +71,13 @@ var.test(day.28.leaves ~ group, data = dat)
 var.test(day.35.leaves ~ group, data = dat)
 ```
 
+```{r boxplat}
+install.packages ("ggplot2")
+library(ggplot2)
+
+```
+
+
+
+
 
