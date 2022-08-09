@@ -116,7 +116,7 @@ ch #make plot
 
 Trim images to remove any bits of and also dot marks used for scaling images for leaf area analyses.
 
-```{r trim images manually, include = TRUE}
+```{r trim images manually, include = TRUE, eval = FALSE}
 img_s001 <- image_import("./photos_day49/s001.JPG")
 img_s001 <- image_trim(img_s001, top = 500, bottom = 700, left = 500, right = 400, plot = TRUE) # trim edges
 image_export(img_s001, "./images_trimmed/img_s001.jpg")
@@ -767,7 +767,7 @@ image_export(img_s161, "./images_trimmed/img_s161.jpg")
 
 Use sympmatic_area() function from pliman package to measure pigmentation in 159 samples (batch processing).
 
-```{r analyse, include = TRUE}
+```{r analyse pigmentation, include = TRUE, eval = FALSE}
 
 # Set up pallettes to control for background and distinguish light and dark leaf pigmentation
 #img_s080 <- image_import("./images_trimmed/img_s080.jpg")
@@ -803,12 +803,15 @@ write.csv2(leaf_colorcat, file = "./data/leafcolours_severity.csv")
 
 ```{r merge pigmentation and sample data, include = TRUE}
 ## START HERE
-#leaf_colorcat  <- read.csv2(file = "./data/leafcolours_severity.csv")
-
+leaf_colorcat  <- read.csv2(file = "./data/leafcolours_severity.csv")
+dim(leaf_colorcat)
+dat <- read_excel("./data/data_raw.xlsx", sheet = 1)
+dim(dat)
+names(dat)
 dat_image <- left_join(dat, leaf_colorcat) #join to main dataframe with experimental group info
-#str(dat_image)
+str(dat_image)
 dat_image <- rename(dat_image, area = "day28_TotalLeafArea_cm2)8")
-dat_image$prop_dark_area <- dat_image$symptomatic / (dat_image$symptomatic + dat_image$healthy)
+dat_image$prop_dark_area <- dat_image$symptomatic / (dat_image$symptomatic + dat_image$healthy) #calculate proportion of leaves that are dark
 dat_image <- dat_image[!is.na(dat_image$prop_dark_area), ] #remove rows with NA in dat_image$prop_dark_area
 dim(dat_image)
 ```
@@ -845,5 +848,19 @@ ggplot(dat_image, aes(x = group, y = day49_leaves)) +
   geom_boxplot() +
   #geom_dotplot(binaxis='y', stackdir='center', dotsize=1, alpha = 0.5) #+ 
   geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5)
+
+
+ggplot(dat_image, aes(x = group, y = day49_leaves)) + 
+  geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5) +
+  geom_boxplot() +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  #\theme(plot.title = element_text(hjust = 0.5),
+    #panel.background = element_rect(fill = "darkolivegreen2",
+    #color = "green4",
+    #size = 0.5, linetype = "solid"),
+  labs(title = "Duckweed Surface Area") +
+  scale_fill_manual(values = c("darkgreen", "lightblue2")) +
+  labs(y = "area [cm^2]")
 
 ```
