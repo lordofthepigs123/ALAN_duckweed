@@ -814,6 +814,8 @@ dat_image <- rename(dat_image, area = "day28_TotalLeafArea_cm2)8")
 dat_image$prop_dark_area <- dat_image$symptomatic / (dat_image$symptomatic + dat_image$healthy) #calculate proportion of leaves that are dark
 dat_image <- dat_image[!is.na(dat_image$prop_dark_area), ] #remove rows with NA in dat_image$prop_dark_area
 dim(dat_image)
+
+
 ```
 
 ## Visualise differences between groups and run statistical tests
@@ -834,7 +836,7 @@ summary(glm_model)
 ## Better plots of difference between the groups
 
 ```{r plot colour data, include = TRUE}
-
+library(ggplot2)
 ## boxplots of leaves counts and pigmentation, by group
 
 #day49 pigmentation
@@ -843,24 +845,82 @@ ggplot(dat_image, aes(x = group, y = prop_dark_area)) +
   #geom_dotplot(binaxis='y', stackdir='center', dotsize=1, alpha = 0.5) #+ 
   geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5)
 
+ggplot(dat_image, aes(x = group, y = prop_dark_area)) + 
+  geom_boxplot() + 
+  theme_minimal() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "darkolivegreen2",
+    color = "green4",
+    size = 0.5, linetype = "solid")) +
+  labs(title = "Duckweed Pigmentation") +
+  scale_fill_manual(values = c("darkgreen", "lightblue2")) +
+  labs(y = "proportion of dark under the leaf") +
+  geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5)
+
+ggsave("fig_pigmentation.png", width = 10, height = 8, unit = "cm")
+
 #day49 leaves counts
 ggplot(dat_image, aes(x = group, y = day49_leaves)) + 
   geom_boxplot() +
   #geom_dotplot(binaxis='y', stackdir='center', dotsize=1, alpha = 0.5) #+ 
   geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5)
 
+dat_image$group <- as.factor(dat_image$group)
+levels(dat_image$group)
+levels(dat_image$group) <- c("ALAN", "Control")
 
+levels(dat_image$group) <- c("ALAN", "Control")
 ggplot(dat_image, aes(x = group, y = day49_leaves)) + 
   geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5) +
   geom_boxplot() +
   theme_minimal() +
   theme(legend.position = "none") +
-  #\theme(plot.title = element_text(hjust = 0.5),
-    #panel.background = element_rect(fill = "darkolivegreen2",
-    #color = "green4",
-    #size = 0.5, linetype = "solid"),
-  labs(title = "Duckweed Surface Area") +
+  theme(plot.title = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "darkolivegreen2",
+    color = "green4",
+    size = 0.5, linetype = "solid")) +
+  labs(title = "Duckweed Growth Leaf Count") +
   scale_fill_manual(values = c("darkgreen", "lightblue2")) +
-  labs(y = "area [cm^2]")
+  labs(y = "Leaf Count")
+
+ggsave("fig_growth.png", width = 10, height = 8, unit = "cm")
+
+```
+
+
+## Two plots of difference between the groups for the poster
+
+```{r plot colour data, include = TRUE}
+library(ggplot2)
+library(gridExtra)
+
+plot1 <- ggplot(dat_image, aes(x = group, y = day49_leaves)) + 
+  geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5) +
+  geom_boxplot() +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "darkolivegreen2",
+    color = "green4",
+    size = 0.5, linetype = "solid")) +
+  labs(title = "Figure 1. Duckweed Growth as Leaf Count") +
+  scale_fill_manual(values = c("darkgreen", "lightblue2")) +
+  labs(y = "Leaf count")
+
+plot2 <- ggplot(dat_image, aes(x = group, y = prop_dark_area)) + 
+  geom_boxplot() + 
+  theme_minimal() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "darkolivegreen2",
+    color = "green4",
+    size = 0.5, linetype = "solid")) +
+  labs(title = "Figure 2. Duckweed Leaf Underside Pigmentation") +
+  scale_fill_manual(values = c("darkgreen", "lightblue2")) +
+  labs(y = "Proportion of dark pigmented area") +
+  geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5)
+
+ggsave("figs_poster.png", grid.arrange(plot1, plot2, ncol = 2), width = 24, height = 10, unit = "cm")
 
 ```
