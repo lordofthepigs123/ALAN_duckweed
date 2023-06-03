@@ -7,29 +7,47 @@ editor_options:
   chunk_output_type: console
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include = FALSE, eval = TRUE}
 knitr::opts_chunk$set(echo = TRUE)
+options(scipen=999)
 
+library(here)
 library(tidyverse)
 library(pliman)
 library(readxl)
+library(knitr)
+library(ggplot2)
+library(gridExtra)
+library(ggbeeswarm)
+library(ggplot2)
+library(lme4)
+library(readr)
+library(report)
+library(performance)
+library(nlme)
+library(dplyr)
+library(ggpubr)
+library(huxtable)
 
 sessionInfo()
 ```
 
-## Randomizing sampes
+
+## Randomizing sampes for experiment
 
 Generate random sequence for assigning cups to ALAN and control groups.
 
-```{r randomise, include=TRUE}
+```{r randomise, include = TRUE, eval = FALSE}
 set.seed(1111)
 ALAN_samples <- sort(sample(x = c(1:160), size = 80))
 ```
 
-## Initial analyses
 
-### Light data
-```{r lights data, include=TRUE}
+## Initial analyses of data
+
+### Light intensity data and analyses.   
+
+```{r light intensity data, include=TRUE}
 light_day <- c(470,390,560.480,350,760,550,370)
 mean(light_day)
 sd(light_day)
@@ -42,77 +60,378 @@ light_night_control <- c(0.2,0.2,0.2,0.2)
 mean(light_night_control)
 sd(light_night_control)
 
+wilcox.test(light_night_ALAN, light_night_control)
 ```
 
-### Plant growth data.
+### Plant data and analyses.  
+## Load and prepare main growth data.
 
-Plant growth data up to Day 35 - based on counting numbers of leaves and leaf area mesured from photos taken on Day 28.
+Growth data as weekly leaf counts (Day 0 - Day 49) and leaf area mesured from photos taken on Day 28.
 
-```{r load data, include=TRUE}
-dat <- read.csv(file = "ALAN Experiment Data.csv")
-str(dat)
-names(dat)
-dat$group <- as.factor(dat$group)
-levels(dat$group)
-levels(dat$group) <- c("ALAN", "Control")
+```{r load data, include = TRUE, eval = TRUE}
+dat <- read_excel(here("data", "data_raw.xlsx"), sheet = 1)
+#dim(dat) #161
+#names(dat)
+dat$group <- as.factor(dat$group) #convert to factor
+#levels(dat$group)
+levels(dat$group) <- c("ALAN", "Control") #use full group names
+dat$group01 <- ifelse(dat$group == "Control", 0, 1) #make a new group variable coded 0 (Control) and 1 (ALAN)
+dat <- rename(dat, day28_leaf_area = "day28_TotalLeafArea_cm2)8") #rename variable
+dat <- rename(dat, sample = "sample_code") #rename variable
+#table(is.na(dat$area)) # 1 missing value
+dat$obs <- 1:dim(dat)[1] #add new column with observation numbers
+dat$day49_leaves_all <- dat$day49_leaves + dat$day49_deadleaves #calculate total number of leaves (alive + dead) on day 42
+dat$day42_leaves_all <- dat$day42_leaves + dat$day42_deadleaves #calculate total number of leaves (alive + dead) on day 42
+
+#sapply(dat, function(x) sum(is.na(x))) #check fo numbers of missing values in each column
+```
+
+## Load and merge processed leaf pignmentation data with count data.   
+
+Note: code chunks for actual processing of the images are at the end of this document - they are not run or knitted, as this take long time and the analyses below use processed and saved output.    
+
+```{r load merge pigmentation and sample data, include = TRUE}
+leaf_colorcat  <- read.csv2(here("data", "leafcolours_severity.csv")) #load processed data
+#dim(leaf_colorcat) #159 values
+dat_image <- left_join(dat, leaf_colorcat) #join (merge) to main dataframe with experimental group info
+#names(dat_image)
+dat_image$day49_prop_dark_area <- dat_image$symptomatic / (dat_image$symptomatic + dat_image$healthy) #calculate proportion of leaves that are dark
+#dat_image <- dat_image[!is.na(dat_image$day49_prop_dark_area), ] #remove rows with NA in dat_image$prop_dark_area
+#dim(dat_image)
+
+#sapply(dat_image, function(x) sum(is.na(x))) #check fo numbers of missing values in each column
+#table(is.na(dat_image$img), dat_image$group) #79 for ALAN and 80 for Control
+```
+
+Prepare weekly leaf count data in a long format.   
+
+```{r leaf count data long format, include = TRUE, eval = TRUE}
+#names(dat)
+#scatterplot plot of counts across the weeks by group using package ggbeeswarm
+dat %>% pivot_longer(c(4:10,12), names_to = "days", values_to = "counts") %>% 
+  select(sample, group = group, area = day28_leaf_area, days, counts) -> 
+  dat2 #transform selected columns to long data format
+
+dat2$day <- parse_number(dat2$days) #convert from character string to day number
+dat2$zday <- scale(dat2$day) #scale day numbers to mean of 0
+dat2$obs <- 1:dim(dat2)[1] #add observation numbers
+dat2$group01 <- ifelse(dat2$group == "Control", 0, 1) #recode groups as 0 and 1 values
+dat2 <- dat2[!is.na(dat2$counts), ] #remove rows with missing values
+#dim(dat2)
+```
+
+Figure 2 for the manuscript (not including here - saving into a file).   
+
+```{r plot weekly leaf counts, include = TRUE, eval = FALSE}
+#names(dat)
+#scatterplot plot of counts across the weeks by group using package ggbeeswarm
+dat %>% pivot_longer(c(4:10,12), names_to = "days", values_to = "counts") %>% 
+  select(sample, group = group, area = day28_leaf_area, days, counts) -> 
+  dat2 #transform selected columns to long data format
+
+dat2$day <- parse_number(dat2$days) #convert from character string to day number
+dat2$zday <- scale(dat2$day) #scale day numbers to mean of 0
+dat2$obs <- 1:dim(dat2)[1] #add observation numbers
+dat2$group01 <- ifelse(dat2$group == "Control", 0, 1) #recode groups as 0 and 1 values
+dat2 <- dat2[!is.na(dat2$counts), ] #remove rows with missing values
+#dim(dat2)
+
+dat2 %>% 
+  ggplot(aes(day, counts, col = group, shape = group)) +
+    geom_quasirandom(alpha = 0.2, size = 2) + # plot raw data using quasirandom method to distribute the points
+    stat_summary(fun = mean, geom = 'point', size = 2) + # compute mean points and plot
+    stat_summary(fun.data = mean_cl_normal, geom = 'errorbar', width = 0) + # compute confidence intervals
+    scale_color_manual(values = c("sienna1", "deepskyblue3")) +  
+    theme_classic() + 
+    theme(legend.position = "top") +  
+    theme(plot.title = element_text(hjust = 0.5)) +
+    scale_x_continuous(limits = c(-5, 54), expand = c(0, 0), breaks = c(0,7,14, 21, 28, 35, 42, 49)) +
+    labs(title = "Duckweed growth as weekly leaf counts") +
+    labs(y = "Leaf count")
+  #theme_bw(base_size=12) 
+
+ggsave(here("plots", "fig_weekly_growth.png"), width = 18, height = 12, unit = "cm")
+```
+
+Use mixed models for weekly leaf counts.
+
+```{r model weekly leaf counts, include = TRUE, eval = FALSE}
+# using a generalised mixed model with poisson link function and repeated measurements (nesting in sample identity)
+model <- glmer(counts ~ 1 +  group01 + zday + (1|sample) , family = "poisson", data = dat2) #control is coded as group 0 and ALAN is coded as group 1
+summary(model)
+report(model)
+#report_parameters(model)
+#report_statistics(model)
+r2_nakagawa(model)
 ```
 
 Use non-parametric Wilcoxon test to compare medians (without assuming that variances are equal).
 
 ```{r compare medians, include=TRUE}
-dat$area <- dat$Total.Leaf.Area..cm2.
-wilcox.test(area ~ group, data = dat)
-wilcox.test(day.0.leaves ~ group, data = dat)
-wilcox.test(day.7.leaves ~ group, data = dat)
-wilcox.test(day.14.leaves ~ group, data = dat)
-wilcox.test(day.21.leaves ~ group, data = dat)
-wilcox.test(day.28.leaves ~ group, data = dat)
-wilcox.test(day.35.leaves ~ group, data = dat)
+#names(dat_image)
+# wilcox.test(day0_leaves ~ group, data = dat_image)
+# wilcox.test(day7_leaves ~ group, data = dat_image)
+# wilcox.test(day14_leaves ~ group, data = dat_image)
+# wilcox.test(day21_leaves ~ group, data = dat_image)
+# wilcox.test(day28_leaves ~ group, data = dat_image)
+# wilcox.test(day35_leaves ~ group, data = dat_image)
+# wilcox.test(day42_leaves ~ group, data = dat_image)
+# wilcox.test(day49_leaves ~ group, data = dat_image)
+# wilcox.test(day42_deadleaves ~ group, data = dat_image)
+# wilcox.test(day49_deadleaves ~ group, data = dat_image)
+# wilcox.test(day42_leaves_all ~ group, data = dat_image)
+# wilcox.test(day49_leaves_all ~ group, data = dat_image)
+# wilcox.test(day28_leaf_area ~ group, data = dat_image)
+# wilcox.test(day49_prop_dark_area ~ group, data = dat_image)
+
+tab_01 <- t(sapply(dat_image[ , c("day0_leaves","day7_leaves","day14_leaves","day21_leaves","day28_leaves","day35_leaves","day42_leaves","day49_leaves","day42_deadleaves","day49_deadleaves", "day42_leaves_all", "day49_leaves_all","day28_leaf_area", "day49_prop_dark_area")], 
+                   function(x) unlist(wilcox.test(x ~ dat$group) [c("statistic","p.value")])))
+str(tab_01)
+tab_01 <- round(as.data.frame(tab_01), 3)
+```
+
+As a table.     
+
+```{r compare medians - test results table, include=TRUE}
+kable(
+  tab_01,
+  col.names = c("W statistics", "p-value"),
+  caption = "S1. Results of Wilcoxon runk sum tests to cempare medians of two groups."
+  )
 ```
 
 Use F-test to test for homogeneity of variances.
 
-```{r compare variances, include=TRUE}
-var.test(area ~ group, data = dat)
-var.test(day.0.leaves ~ group, data = dat)
-var.test(day.7.leaves ~ group, data = dat)
-var.test(day.14.leaves ~ group, data = dat)
-var.test(day.21.leaves ~ group, data = dat)
-var.test(day.28.leaves ~ group, data = dat)
-var.test(day.35.leaves ~ group, data = dat)
+```{r compare variances, include = TRUE, eval = TRUE}
+#names(dat_image)
+# var.test(day0_leaves ~ group, data = dat_image)
+# var.test(day7_leaves ~ group, data = dat_image)
+# var.test(day14_leaves ~ group, data = dat_image)
+# var.test(day21_leaves ~ group, data = dat_image)
+# var.test(day28_leaves ~ group, data = dat_image)
+# var.test(day35_leaves ~ group, data = dat_image)
+# var.test(day42_leaves ~ group, data = dat_image)
+# var.test(day49_leaves ~ group, data = dat_image)
+# var.test(day42_deadleaves ~ group, data = dat_image)
+# var.test(day49_deadleaves ~ group, data = dat_image)
+# var.test(day42_leaves_all ~ group, data = dat_image)
+# var.test(day49_leaves_all ~ group, data = dat_image)
+# var.test(day28_leaf_area ~ group, data = dat_image)
+# var.test(day49_prop_dark_area ~ group, data = dat_image)
+
+tab_02 <- t(sapply(dat_image[ , c("day0_leaves","day7_leaves","day14_leaves","day21_leaves","day28_leaves","day35_leaves","day42_leaves","day49_leaves","day42_deadleaves","day49_deadleaves", "day42_leaves_all", "day49_leaves_all","day28_leaf_area", "day49_prop_dark_area")], 
+                   function(x) unlist(var.test(x ~ dat$group) [c("statistic","p.value")])))
+str(tab_02)
+tab_02 <- round(as.data.frame(tab_02), 3)
 ```
 
-Make simple boxplot to visualise difference between the groups in leaf area measured from photos taken on Day 28.
+As a table.   
 
-```{r boxplat}
+```{r compare variances - test results table, include=TRUE}
+kable(
+  tab_02,
+  col.names = c("F statistics", "p-value"),
+  caption = "S2. Results of F tests to compare variances of two groups."
+  )
+```
 
-ggplot(dat, aes(x = group, y = area)) + 
-  geom_boxplot()
+As one table for the main text (not shown here).    
 
-ch <- ggplot(dat, aes(x = group, y = area, fill = group)) + 
-    geom_boxplot() +
-  theme_minimal() +
+```{r merge test results tables, include = FALSE, evaluate  = FALSE}
+tab_main <- cbind(rownames(tab_01), tab_01, tab_02)
+colnames(tab_main) <- c("Measurement", "W", "p", "F", "p")
+
+#using library(huxtable)
+
+as_hux(tab_main) %>% 
+    set_italic(1, 2:5) %>% 
+    insert_row("","Comparing medians", "", "Comparing variances", "", fill = "") %>% 
+    set_header_rows(1:2, TRUE) %>% 
+    merge_cells(1, 2:3) %>% 
+    merge_cells(1, 4:5) %>%  
+    set_header_rows(1, TRUE) %>% 
+    style_headers(bold = TRUE) %>% 
+    set_align(1, everywhere, "center") %>%
+    set_bottom_border(row = c(0, 2, 16), col = everywhere) %>% 
+    set_right_border(everywhere, c(1, 3), brdr(1, "solid", "black")) -> table_main
+
+# quick_pdf(table_main)
+# quick_html(table_main)
+# quick_xlsx(table_main)
+```
+
+Additional model for leaf pigmentation using glm for proportion data.   
+
+```{r test leaf pigmentation day49 glm, include = TRUE}
+#fit linear model for proportions
+glm_model <- glm(day49_prop_dark_area ~ group, dat_image, family = quasibinomial())
+summary(glm_model) #signif difference between groups
+```
+
+
+
+## Differences between groups - plots 
+
+Figure 3 for the manuscript (not including here - saving into a file).   
+
+```{r plot differences between groups, include = TRUE, eval = FALSE}
+
+### Dead leaves on Day 42 and Day 49:
+
+#plot for Day 42
+dead42 <- dat_image %>% 
+  filter(!is.na(day42_deadleaves)) %>%    
+  ggplot(aes(group, day42_deadleaves, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
   theme(legend.position = "none") +
-  theme(plot.title = element_text(hjust = 0.5),
-    panel.background = element_rect(fill = "darkolivegreen2",
-    color = "green4",
-    size = 0.5, linetype = "solid"),
-#    panel.grid.major = element_line(size = 0.5, linetype = 'solid', color = "white"),
-#    panel.grid.minor = element_line(size = 0.25, linetype = 'solid', color = "white")
-  ) + 
-  labs(title = "Duckweed Surface Area") +
-  scale_fill_manual(values = c("darkgreen", "lightblue2")) +
-  labs(y = "area [cm^2]")
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 5) +
+  labs(title = "A. Counts of dead leaves on Day 42") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Leaf count")
+  
+#plot for Day 49
+dead49 <- dat_image %>% 
+  filter(!is.na(day49_deadleaves)) %>%    
+  ggplot(aes(group, day49_deadleaves, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 5) +
+  labs(title = "B. Counts of dead leaves on Day 49") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Leaf count")
+  
+#plot total leaves for Day 42
+all42 <- dat_image %>% 
+  filter(!is.na(day42_leaves_all)) %>%    
+  ggplot(aes(group, day42_leaves_all, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 40) +
+  labs(title = "C. Counts of live and dead leaves on Day 42") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Leaf count")
+  
+#plot total leaves for Day 49
+all49 <- dat_image %>% 
+  filter(!is.na(day49_leaves_all)) %>%    
+  ggplot(aes(group, day49_leaves_all, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 40) +
+  labs(title = "D. Counts of live and dead leaves on Day 49") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Leaf count")
 
-ch #make plot
-                               
+#plot area for Day 28
+area28 <- dat_image %>% 
+  filter(!is.na(day28_leaf_area)) %>%    
+  ggplot(aes(group, day28_leaf_area, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 1.5) +
+  labs(title = "E. Total leaf area on Day 28") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Leaf area [cm^2]")
+  
+#plot pigmentation for Day 49
+pigm49 <- dat_image %>% 
+  filter(!is.na(day49_prop_dark_area)) %>%    
+  ggplot(aes(group, day49_prop_dark_area, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 1) +
+  labs(title = "F. Underside pigmentation on Day 49") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Proportion")
+  
+#save the figure 
+ggsave(here("plots", "plot.groupdifferences.png"), grid.arrange(dead42, dead49, all42, all49, area28, pigm49, ncol = 2, nrow = 3), width = 16, height = 18, units = "cm", dpi = 300, scale = 1.4)                  
 ```
 
 
-## Analyses of leaf pigmentation - Day 49
+## Exploratory plots
+
+Figure 4 for the manuscript (not including here - saving into a file).    
+Correlation between leaf count and leaf area on Day 28, by group.    
+Correlation between total leaf count and proportion of dark leaf area on Day 49, by group.  
+
+```{r leaf counts correlations tests, include = TRUE, eval = TRUE}
+dat_image %>%
+  filter(!is.na(day28_leaves)) %>%
+  filter(!is.na(day28_leaf_area)) %>%
+  group_by(group) %>%
+  summarize(cor(day28_leaves, day28_leaf_area)) 
+  #summarize(test = cor.test(day28_leaves, day28_leaf_area)$p.value) #for p-values
+
+dat_image %>%
+  filter(!is.na(day49_leaves)) %>%
+  filter(!is.na(day49_prop_dark_area)) %>%
+  group_by(group) %>%
+  summarize(cor(day49_leaves, day49_prop_dark_area)) 
+  #summarize(test = cor.test(day49_leaves, day49_prop_dark_area)$p.value) #for p-values
+```
+
+```{r leaf counts correlations plots, include = FALSE, eval = FALSE}
+
+#plot correlation for Day 48
+corr28 <- dat_image %>% 
+  filter(!is.na(day28_leaves)) %>%
+  filter(!is.na(day28_leaf_area)) %>%
+  ggplot(aes(x = day28_leaves, y = day28_leaf_area)) + 
+  geom_point(aes(color = group, shape = group)) +
+  geom_smooth(aes(color = group), method = lm, se = FALSE, fullrange = TRUE) +
+  theme_classic() +
+  theme(legend.position = "top") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  ylim(0, 2) +
+  labs(title = "A. Leaf count and surface area on Day 28") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +  
+  labs(x = "number of leaves", y = "total leaf area [cm^2]") +
+  ggpubr::stat_cor(aes(color = group), p.accuracy = 0.001, label.x.npc = "centre", label.y.npc = "top")  #add correlation coefficients to the plot
+
+#plot correlation for Day 49
+corr49 <- dat_image %>% 
+  filter(!is.na(day49_leaves)) %>%
+  filter(!is.na(day49_prop_dark_area)) %>%
+  ggplot(aes(x = day49_leaves, y = day49_prop_dark_area)) + 
+  geom_point(aes(color = group, shape = group)) +
+  #geom_rug(aes(color = group)) +
+  geom_smooth(aes(color = group), method = lm, se = FALSE, fullrange = TRUE) +
+  theme_classic() +
+  theme(legend.position = "top") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  ylim(0, 1) +
+  labs(title = "B. Leaf count and pigmentation on Day 49") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +  
+  labs(x = "number of leaves", y = "proportion of dark leaf area") +
+  ggpubr::stat_cor(aes(color = group), p.accuracy = 0.001, label.x.npc = "centre", label.y.npc = "top") #add correlation coefficients to the plot
+  
+#save the figure 
+ggsave(here("plots", "plot.groupcorrs.png"), grid.arrange(corr28, corr49, ncol = 2, nrow = 1), width = 16, height = 8, units = "cm", dpi = 300, scale = 1.4)      
+```
 
 
-## Load images and trim
+
+
+### Load images and trim [do not run]
 
 Trim images to remove any bits of and also dot marks used for scaling images for leaf area analyses.
 
@@ -763,13 +1082,13 @@ image_export(img_s161, "./images_trimmed/img_s161.jpg")
 ```
 
 
-## Measure pigmentation levels
+### Calculate pigmentation levels
 
 Use sympmatic_area() function from pliman package to measure pigmentation in 159 samples (batch processing).
 
 ```{r analyse pigmentation, include = TRUE, eval = FALSE}
 
-# Set up pallettes to control for background and distinguish light and dark leaf pigmentation
+# Set up palettes to control for background and distinguish light and dark leaf pigmentation
 #img_s080 <- image_import("./images_trimmed/img_s080.jpg")
 light <- image_import("./images_trimmed/light.jpg") #load light pigmentation pallette
 dark <- image_import("./images_trimmed/dark.jpg") #load dark pigmentation pallette
@@ -800,100 +1119,11 @@ leaf_colorcat$file_name <- leaf_colorcat$img
 write.csv2(leaf_colorcat, file = "./data/leafcolours_severity.csv")
 ```
 
+###
 
-```{r merge pigmentation and sample data, include = TRUE}
-## START HERE
-leaf_colorcat  <- read.csv2(file = "./data/leafcolours_severity.csv")
-dim(leaf_colorcat)
-dat <- read_excel("./data/data_raw.xlsx", sheet = 1)
-dim(dat)
-names(dat)
-dat_image <- left_join(dat, leaf_colorcat) #join to main dataframe with experimental group info
-str(dat_image)
-dat_image <- rename(dat_image, area = "day28_TotalLeafArea_cm2)8")
-dat_image$prop_dark_area <- dat_image$symptomatic / (dat_image$symptomatic + dat_image$healthy) #calculate proportion of leaves that are dark
-dat_image <- dat_image[!is.na(dat_image$prop_dark_area), ] #remove rows with NA in dat_image$prop_dark_area
-dim(dat_image)
-
-
-```
-
-## Visualise differences between groups and run statistical tests
-
-```{r test colour data, include = TRUE}
-
-hist(dat_image$prop_dark_area) #proportions
-boxplot(dat_image$prop_dark_area ~ dat_image$group) #simple boxplot
-
-#nonparametric test for differences in proportions
-wilcox.test(prop_dark_area ~ group, data = dat_image)
-
-#fit linear model for proportions
-glm_model <- glm(prop_dark_area ~ group, dat_image, family = quasibinomial())
-summary(glm_model)
-```
-
-## Better plots of difference between the groups
-
-```{r plot colour data, include = TRUE}
-library(ggplot2)
-## boxplots of leaves counts and pigmentation, by group
-
-#day49 pigmentation
-ggplot(dat_image, aes(x = group, y = prop_dark_area)) + 
-  geom_boxplot() +
-  #geom_dotplot(binaxis='y', stackdir='center', dotsize=1, alpha = 0.5) #+ 
-  geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5)
-
-ggplot(dat_image, aes(x = group, y = prop_dark_area)) + 
-  geom_boxplot() + 
-  theme_minimal() +
-  theme(legend.position = "none") +
-  theme(plot.title = element_text(hjust = 0.5),
-    panel.background = element_rect(fill = "darkolivegreen2",
-    color = "green4",
-    size = 0.5, linetype = "solid")) +
-  labs(title = "Duckweed Pigmentation") +
-  scale_fill_manual(values = c("darkgreen", "lightblue2")) +
-  labs(y = "proportion of dark under the leaf") +
-  geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5)
-
-ggsave("fig_pigmentation.png", width = 10, height = 8, unit = "cm")
-
-#day49 leaves counts
-ggplot(dat_image, aes(x = group, y = day49_leaves)) + 
-  geom_boxplot() +
-  #geom_dotplot(binaxis='y', stackdir='center', dotsize=1, alpha = 0.5) #+ 
-  geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5)
-
-dat_image$group <- as.factor(dat_image$group)
-levels(dat_image$group)
-levels(dat_image$group) <- c("ALAN", "Control")
-
-levels(dat_image$group) <- c("ALAN", "Control")
-ggplot(dat_image, aes(x = group, y = day49_leaves)) + 
-  geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5) +
-  geom_boxplot() +
-  theme_minimal() +
-  theme(legend.position = "none") +
-  theme(plot.title = element_text(hjust = 0.5),
-    panel.background = element_rect(fill = "darkolivegreen2",
-    color = "green4",
-    size = 0.5, linetype = "solid")) +
-  labs(title = "Duckweed Growth Leaf Count") +
-  scale_fill_manual(values = c("darkgreen", "lightblue2")) +
-  labs(y = "Leaf Count")
-
-ggsave("fig_growth.png", width = 10, height = 8, unit = "cm")
-
-```
-
-
-## Two plots of difference between the groups for the poster
-
-```{r plot colour data, include = TRUE}
-library(ggplot2)
-library(gridExtra)
+```{r plot two panels for poster data, include = FALSE, eval = FALSE}
+## One plot with two panels of differences between the groups for the poster
+# using library(ggplot2) and library(gridExtra)
 
 plot1 <- ggplot(dat_image, aes(x = group, y = day49_leaves)) + 
   geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5) +
@@ -922,5 +1152,6 @@ plot2 <- ggplot(dat_image, aes(x = group, y = prop_dark_area)) +
   geom_jitter(shape=16, position=position_jitter(0.2), alpha = 0.5)
 
 ggsave("figs_poster.png", grid.arrange(plot1, plot2, ncol = 2), width = 24, height = 10, unit = "cm")
-
 ```
+
+
