@@ -1,0 +1,41 @@
+
+sample_code - code of each individual duckweed sample.
+
+sample_nr -  cup number of each sample.
+
+group - assigned group of each each cup. 'C' is control group and 'A' is ALAN group.
+
+day0_leaves - integers for number of leaves in each sample at beginning of experiment.
+
+day7_leaves - integers for number of leaves in each sample after 7 days.
+
+day14_leaves - integers for number of leaves in each sample after 14 days.
+
+day21_leaves - integers for number of leaves in each sample after 21 days.
+
+day28_leaves - integers for number of leaves in each sample after 28 days.
+
+day35_leaves - integers for number of leaves in each sample after 35 days.
+
+day42_leaves - integers for number of leaves in each sample after 42 days.
+
+day42_deadleaves - integers for number of leaves that are whitened or decayed enough to be considered 'dead'. This was recorded for each sample after 42 days.
+
+day49_leaves - integers for number of leaves in each sample after 49 days.
+
+day49_deadleaves - integers for number of leaves that are whitened or decayed enough to be considered 'dead'. This was recorded for each sample after 49 days.
+
+day28_TotalLeafArea_cm2)8 - approximate area of total leaves surface area measured using program 'LeafByte'. This was recorded for each sample after 28 days.
+
+file_name - file name of each image of corresponding sample number used in calculating total leaf area.
+
+
+File: leafcolours_severity.csv
+
+img - image ID representing corresponding cup and sample number.
+
+healthy - percentage of 'light' leaf area in image of a sample. ',' is the decimal place separator. This percentage is decided based on if the brightness of each pixel is higher than a certain threshold after subtracting the background. This was recorded for each sample after 49 days.
+
+symptomatic - percentage of 'dark' leaf area in image of sample. ',' is the decimal place. This percentage is decided based on if the brightness of each pixel is lower than a certain threshold after removing the background. This was recorded for each sample after 49 days.
+
+file_name - file name of each image of corresponding sample number used in leaf colour analysis.
