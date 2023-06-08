@@ -1,0 +1,1135 @@
+---
+title: "R_analyses_code"
+output: html_document
+date: '2023-06-06'
+author: TNL & ML
+editor_options: 
+  chunk_output_type: console
+---
+
+## Set up
+
+Load packages.
+
+```{r setup, include = FALSE, eval = TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen=999)
+
+library(here)
+library(tidyverse)
+library(pliman)
+library(readxl)
+library(knitr)
+library(ggplot2)
+library(gridExtra)
+library(ggbeeswarm)
+library(ggplot2)
+library(lme4)
+library(readr)
+library(report)
+library(performance)
+library(nlme)
+library(dplyr)
+library(ggpubr)
+library(huxtable)
+```
+
+Session info.   
+```{r session info, include = TRUE, eval = TRUE}
+sessionInfo()
+```
+
+
+## Randomizing sampes for experiment
+
+Generate random sequence for assigning cups to ALAN and control groups.
+
+```{r randomise, include = TRUE, eval = FALSE, echo = FALSE}
+set.seed(1111)
+ALAN_samples <- sort(sample(x = c(1:160), size = 80))
+```
+
+
+## Analyses of data
+
+### Light intensity data analyses.   
+
+```{r light intensity data, include = TRUE}
+light_day <- c(470,390,560.480,350,760,550,370)
+mean(light_day)
+sd(light_day)
+
+light_night_ALAN <- c(30,46,47,39)
+mean(light_night_ALAN)
+sd(light_night_ALAN)
+
+light_night_control <- c(0.2,0.2,0.2,0.2)
+mean(light_night_control)
+sd(light_night_control)
+
+wilcox.test(light_night_ALAN, light_night_control)
+```
+
+### Plant data and analyses.   
+
+Growth data was measured as weekly leaf counts (Day 0 - Day 49) and leaf area was measured from photos taken on Day 28.   
+
+Load and prepare main growth data.   
+
+```{r load data, include = TRUE, eval = TRUE}
+dat <- read_excel(here("data", "data_raw.xlsx"), sheet = 1)
+#dim(dat) #161
+#names(dat)
+dat$group <- as.factor(dat$group) #convert to factor
+#levels(dat$group)
+levels(dat$group) <- c("ALAN", "Control") #use full group names
+dat$group01 <- ifelse(dat$group == "Control", 0, 1) #make a new group variable coded 0 (Control) and 1 (ALAN)
+dat <- rename(dat, day28_leaf_area = "day28_TotalLeafArea_cm2)8") #rename variable
+dat <- rename(dat, sample = "sample_code") #rename variable
+#table(is.na(dat$area)) # 1 missing value
+dat$obs <- 1:dim(dat)[1] #add new column with observation numbers
+dat$day49_leaves_all <- dat$day49_leaves + dat$day49_deadleaves #calculate total number of leaves (alive + dead) on day 42
+dat$day42_leaves_all <- dat$day42_leaves + dat$day42_deadleaves #calculate total number of leaves (alive + dead) on day 42
+#sapply(dat, function(x) sum(is.na(x))) #check fo numbers of missing values in each column
+```
+
+Load and merge processed leaf pignmentation data with count data.     
+
+Note: code chunks for actual processing of the images are at the end of this document - they are not run or knitted, as this take long time and the analyses below just use processed and saved output.     
+
+```{r load merge pigmentation and sample data, include = TRUE}
+leaf_colorcat  <- read.csv2(here("data", "leafcolours_severity.csv")) #load processed data
+#dim(leaf_colorcat) #159 values
+dat_image <- left_join(dat, leaf_colorcat) #join (merge) to main dataframe with experimental group info
+#names(dat_image)
+dat_image$day49_prop_dark_area <- dat_image$symptomatic / (dat_image$symptomatic + dat_image$healthy) #calculate proportion of leaves that are dark
+#dat_image <- dat_image[!is.na(dat_image$day49_prop_dark_area), ] #remove rows with NA in dat_image$prop_dark_area
+#dim(dat_image)
+#sapply(dat_image, function(x) sum(is.na(x))) #check fo numbers of missing values in each column
+#table(is.na(dat_image$img), dat_image$group) #79 for ALAN and 80 for Control
+```
+
+Prepare weekly leaf count data in a long format.   
+
+```{r leaf count data long format, include = TRUE, eval = TRUE}
+#names(dat)
+## scatterplot plot of counts across the weeks by group using package ggbeeswarm
+dat %>% pivot_longer(c(4:10,12), names_to = "days", values_to = "counts") %>% 
+  select(sample, group = group, area = day28_leaf_area, days, counts) -> 
+  dat2 #transform selected columns to long data format
+
+dat2$day <- parse_number(dat2$days) #convert from character string to day number
+dat2$zday <- scale(dat2$day) #scale day numbers to mean of 0
+dat2$obs <- 1:dim(dat2)[1] #add observation numbers
+dat2$group01 <- ifelse(dat2$group == "Control", 0, 1) #recode groups as 0 and 1 values
+dat2 <- dat2[!is.na(dat2$counts), ] #remove rows with missing values
+#dim(dat2)
+```
+
+Prepare data for plotting weekly leaf counts by group .   
+
+```{r prepare data for plot weekly leaf counts, include = TRUE, eval = TRUE}
+#names(dat)
+#scatterplot plot of counts across the weeks by group using package ggbeeswarm
+dat %>% pivot_longer(c(4:10,12), names_to = "days", values_to = "counts") %>% 
+  select(sample, group = group, area = day28_leaf_area, days, counts) -> 
+  dat2 #transform selected columns to long data format
+
+dat2$day <- parse_number(dat2$days) #convert from character string to day number
+dat2$zday <- scale(dat2$day) #scale day numbers to mean of 0
+dat2$obs <- 1:dim(dat2)[1] #add observation numbers
+dat2$group01 <- ifelse(dat2$group == "Control", 0, 1) #recode groups as 0 and 1 values
+dat2 <- dat2[!is.na(dat2$counts), ] #remove rows with missing values
+
+#dim(dat2)
+```
+
+Code for Figure 3 - plot of weekly leaf counts by group - for the manuscript (plot not shown here - saving into a file instead).   
+
+```{r plot weekly leaf counts, include = TRUE, eval = FALSE}
+dat2 %>% 
+  ggplot(aes(day, counts, col = group, shape = group)) +
+    geom_quasirandom(alpha = 0.2, size = 2) + # plot raw data using quasirandom method to distribute the points
+    stat_summary(fun = mean, geom = 'point', size = 2) + # compute mean points and plot
+    stat_summary(fun.data = mean_cl_normal, geom = 'errorbar', width = 0) + # compute confidence intervals
+    scale_color_manual(values = c("sienna1", "deepskyblue3")) +  
+    theme_classic() + 
+    theme(legend.position = "top") +  
+    theme(plot.title = element_text(hjust = 0.5)) +
+    scale_x_continuous(limits = c(-5, 54), expand = c(0, 0), breaks = c(0,7,14, 21, 28, 35, 42, 49)) +
+    labs(title = "Duckweed growth as weekly leaf counts") +
+    labs(y = "Leaf count")
+
+ggsave(here("plots", "fig_weekly_growth.png"), width = 18, height = 12, unit = "cm")
+```
+
+Use mixed models for weekly leaf counts.
+
+```{r model weekly leaf counts, include = TRUE, eval = FALSE}
+## using a generalised mixed model with poisson link function and repeated measurements (nesting in sample identity)
+model <- glmer(counts ~ 1 +  group01 + zday + (1|sample) , family = "poisson", data = dat2) #control is coded as group 0 and ALAN is coded as group 1
+summary(model)
+report(model)
+# report_parameters(model)
+#report_statistics(model)
+r2_nakagawa(model)
+```
+
+Use non-parametric Wilcoxon test to compare medians (without assuming that variances are equal).
+
+```{r compare medians, include=TRUE}
+# wilcox.test(day0_leaves ~ group, data = dat_image)
+# wilcox.test(day7_leaves ~ group, data = dat_image)
+# wilcox.test(day14_leaves ~ group, data = dat_image)
+# wilcox.test(day21_leaves ~ group, data = dat_image)
+# wilcox.test(day28_leaves ~ group, data = dat_image)
+# wilcox.test(day35_leaves ~ group, data = dat_image)
+# wilcox.test(day42_leaves ~ group, data = dat_image)
+# wilcox.test(day49_leaves ~ group, data = dat_image)
+# wilcox.test(day42_deadleaves ~ group, data = dat_image)
+# wilcox.test(day49_deadleaves ~ group, data = dat_image)
+# wilcox.test(day42_leaves_all ~ group, data = dat_image)
+# wilcox.test(day49_leaves_all ~ group, data = dat_image)
+# wilcox.test(day28_leaf_area ~ group, data = dat_image)
+# wilcox.test(day49_prop_dark_area ~ group, data = dat_image)
+
+tab_01 <- t(sapply(dat_image[ , c("day0_leaves","day7_leaves","day14_leaves","day21_leaves","day28_leaves","day35_leaves","day42_leaves","day49_leaves","day42_deadleaves","day49_deadleaves", "day42_leaves_all", "day49_leaves_all","day28_leaf_area", "day49_prop_dark_area")], 
+                   function(x) unlist(wilcox.test(x ~ dat$group) [c("statistic","p.value")])))
+str(tab_01)
+tab_01 <- round(as.data.frame(tab_01), 3)
+```
+
+Assemble all test results into a table.     
+
+```{r compare medians - test results table, include=TRUE}
+kable(
+  tab_01,
+  col.names = c("W statistics", "p-value"),
+  caption = "S1. Results of Wilcoxon runk sum tests to compare medians of two groups."
+  )
+```
+
+Use F-test to test for homogeneity of variances.
+
+```{r compare variances, include = TRUE, eval = TRUE}
+#names(dat_image)
+# var.test(day0_leaves ~ group, data = dat_image)
+# var.test(day7_leaves ~ group, data = dat_image)
+# var.test(day14_leaves ~ group, data = dat_image)
+# var.test(day21_leaves ~ group, data = dat_image)
+# var.test(day28_leaves ~ group, data = dat_image)
+# var.test(day35_leaves ~ group, data = dat_image)
+# var.test(day42_leaves ~ group, data = dat_image)
+# var.test(day49_leaves ~ group, data = dat_image)
+# var.test(day42_deadleaves ~ group, data = dat_image)
+# var.test(day49_deadleaves ~ group, data = dat_image)
+# var.test(day42_leaves_all ~ group, data = dat_image)
+# var.test(day49_leaves_all ~ group, data = dat_image)
+# var.test(day28_leaf_area ~ group, data = dat_image)
+# var.test(day49_prop_dark_area ~ group, data = dat_image)
+
+tab_02 <- t(sapply(dat_image[ , c("day0_leaves","day7_leaves","day14_leaves","day21_leaves","day28_leaves","day35_leaves","day42_leaves","day49_leaves","day42_deadleaves","day49_deadleaves", "day42_leaves_all", "day49_leaves_all","day28_leaf_area", "day49_prop_dark_area")], 
+                   function(x) unlist(var.test(x ~ dat$group) [c("statistic","p.value")])))
+str(tab_02)
+tab_02 <- round(as.data.frame(tab_02), 3)
+```
+
+Assemble all test results into a table. 
+
+```{r compare variances - test results table, include=TRUE}
+kable(
+  tab_02,
+  col.names = c("F statistics", "p-value"),
+  caption = "S2. Results of F tests to compare variances of two groups."
+  )
+```
+
+Results of two tests as one table for the main text (not shown here - can be exported into a file).    
+
+```{r merge test results tables, include = FALSE, evaluate  = FALSE}
+tab_main <- cbind(rownames(tab_01), tab_01, tab_02)
+colnames(tab_main) <- c("Measurement", "W", "p", "F", "p")
+
+## Use library(huxtable)
+as_hux(tab_main) %>% 
+    set_italic(1, 2:5) %>% 
+    insert_row("","Comparing medians", "", "Comparing variances", "", fill = "") %>% 
+    set_header_rows(1:2, TRUE) %>% 
+    merge_cells(1, 2:3) %>% 
+    merge_cells(1, 4:5) %>%  
+    set_header_rows(1, TRUE) %>% 
+    style_headers(bold = TRUE) %>% 
+    set_align(1, everywhere, "center") %>%
+    set_bottom_border(row = c(0, 2, 16), col = everywhere) %>% 
+    set_right_border(everywhere, c(1, 3), brdr(1, "solid", "black")) -> table_main
+
+# quick_pdf(table_main)
+# quick_html(table_main)
+# quick_xlsx(table_main)
+```
+
+Additional model for leaf pigmentation using glm for proportion data.   
+
+```{r test leaf pigmentation day49 glm, include = TRUE}
+## fit linear model for proportions
+glm_model <- glm(day49_prop_dark_area ~ group, dat_image, family = quasibinomial())
+summary(glm_model) #signif difference between groups
+```
+
+
+
+## Differences between groups - plots for the main text
+
+Code for Figure 4 for the manuscript - multiple panels with different measures for specific experimental days - (not including the plot here - saving into a file).    
+
+```{r plot differences between groups, include = TRUE, eval = FALSE}
+
+## plot for Day 42
+dead42 <- dat_image %>% 
+  filter(!is.na(day42_deadleaves)) %>%    
+  ggplot(aes(group, day42_deadleaves, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 5) +
+  labs(title = "A. Counts of dead leaves on Day 42") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Leaf count")
+  
+## plot for Day 49
+dead49 <- dat_image %>% 
+  filter(!is.na(day49_deadleaves)) %>%    
+  ggplot(aes(group, day49_deadleaves, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 5) +
+  labs(title = "B. Counts of dead leaves on Day 49") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Leaf count")
+  
+## plot total leaves for Day 42
+all42 <- dat_image %>% 
+  filter(!is.na(day42_leaves_all)) %>%    
+  ggplot(aes(group, day42_leaves_all, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 40) +
+  labs(title = "C. Counts of live and dead leaves on Day 42") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Leaf count")
+  
+## plot total leaves for Day 49
+all49 <- dat_image %>% 
+  filter(!is.na(day49_leaves_all)) %>%    
+  ggplot(aes(group, day49_leaves_all, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 40) +
+  labs(title = "D. Counts of live and dead leaves on Day 49") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Leaf count")
+
+## plot area for Day 28
+area28 <- dat_image %>% 
+  filter(!is.na(day28_leaf_area)) %>%    
+  ggplot(aes(group, day28_leaf_area, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 1.5) +
+  labs(title = "E. Total leaf area on Day 28") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Leaf area [cm^2]")
+  
+## plot pigmentation for Day 49
+pigm49 <- dat_image %>% 
+  filter(!is.na(day49_prop_dark_area)) %>%    
+  ggplot(aes(group, day49_prop_dark_area, col = group, shape = group)) + 
+  geom_boxplot() +
+  geom_quasirandom(alpha = 0.2, size = 3) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(0, 1) +
+  labs(title = "F. Underside pigmentation on Day 49") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +
+  labs(y = "Proportion")
+  
+## save the figure 
+ggsave(here("plots", "plot.groupdifferences.png"), grid.arrange(dead42, dead49, all42, all49, area28, pigm49, ncol = 2, nrow = 3), width = 16, height = 18, units = "cm", dpi = 300, scale = 1.4)                  
+```
+
+
+## Exploratory plots
+
+Code for Figure 5 - relationships between leaf counts and area or pigmentation - for the manuscript (not including here - saving into a file).    
+
+```{r leaf counts correlations plots, include = FALSE, eval = FALSE}
+## plot correlation for Day28 leaf count and area
+corr28 <- dat_image %>% 
+  filter(!is.na(day28_leaves)) %>%
+  filter(!is.na(day28_leaf_area)) %>%
+  ggplot(aes(x = day28_leaves, y = day28_leaf_area)) + 
+  geom_point(aes(color = group, shape = group)) +
+  geom_smooth(aes(color = group), method = lm, se = FALSE, fullrange = TRUE) +
+  theme_classic() +
+  theme(legend.position = "top") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  ylim(0, 2) +
+  labs(title = "A. Leaf count and surface area on Day 28") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +  
+  labs(x = "number of leaves", y = "total leaf area [cm^2]") +
+  ggpubr::stat_regline_equation(aes(color = group), label.x.npc = "centre", label.y.npc = "top")  #adds regression coefficients to the plot
+#ggpubr::stat_cor(aes(color = group), p.accuracy = 0.001, label.x.npc = "centre", label.y.npc = "top")  #adds correlation coefficients to the plot
+
+## plot for Day49 leaf count and pigmentation level
+corr49 <- dat_image %>% 
+  filter(!is.na(day49_leaves)) %>%
+  filter(!is.na(day49_prop_dark_area)) %>%
+  ggplot(aes(x = day49_leaves, y = day49_prop_dark_area)) + 
+  geom_point(aes(color = group, shape = group)) +
+  #geom_rug(aes(color = group)) +
+  geom_smooth(aes(color = group), method = lm, se = FALSE, fullrange = TRUE) +
+  theme_classic() +
+  theme(legend.position = "top") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  ylim(0, 1) +
+  labs(title = "B. Leaf count and pigmentation on Day 49") +
+  scale_fill_manual(values = c("sienna1", "deepskyblue3")) +  
+  labs(x = "number of leaves", y = "proportion of dark leaf area") +
+  ggpubr::stat_regline_equation(aes(color = group), label.x.npc = "centre", label.y.npc = "top")  #adds regression coefficients to the plot
+  #ggpubr::stat_cor(aes(color = group), p.accuracy = 0.001, label.x.npc = "centre", label.y.npc = "top") #adds correlation coefficients to the plot
+  
+#save the figure 
+ggsave(here("plots", "plot.group_regr.png"), grid.arrange(corr28, corr49, ncol = 2, nrow = 1), width = 16, height = 8, units = "cm", dpi = 300, scale = 1.4)      
+```
+
+Correlation between leaf count and leaf area on Day 28, by group.    
+
+```{r leaf counts and total area correlations, include = TRUE, eval = TRUE}
+## Day28 leaf count vs. total leaf area
+dat_image %>%
+  filter(!is.na(day28_leaves)) %>%
+  filter(!is.na(day28_leaf_area)) %>%
+  group_by(group) %>% 
+  reframe(est = cor.test(day28_leaves, day28_leaf_area)$estimate, 
+          l.ci = cor.test(day28_leaves, day28_leaf_area)$conf.int[1], 
+          u.ci = cor.test(day28_leaves, day28_leaf_area)$conf.int[2], 
+          p = cor.test(day28_leaves, day28_leaf_area)$p.value)
+```
+
+Correlation between total leaf count and proportion of dark leaf area on Day 49, by group.  
+
+```{r leaf counts correlations and pigmentation corr tests, include = TRUE, eval = TRUE}
+## Day49 leaf count vs. pigmentation
+dat_image %>%
+  filter(!is.na(day49_leaves)) %>%
+  filter(!is.na(day49_prop_dark_area)) %>%
+  group_by(group) %>% 
+  reframe(est = cor.test(day28_leaves, day49_prop_dark_area)$estimate, 
+          l.ci = cor.test(day28_leaves, day49_prop_dark_area)$conf.int[1], 
+          u.ci = cor.test(day28_leaves, day49_prop_dark_area)$conf.int[2], 
+          p = cor.test(day28_leaves, day49_prop_dark_area)$p.value)
+```
+
+
+### Load images and trim 
+
+Note: code not shown in the knitted document - no need to run this code as the processed image data is already saved and loaded for the analyses above.   
+
+```{r trim images manually, include = FALSE, eval = FALSE}
+## Trim images to remove any bits of and also dot marks used for scaling images for leaf area analyses.
+
+img_s001 <- image_import("./photos_day49/s001.JPG")
+img_s001 <- image_trim(img_s001, top = 500, bottom = 700, left = 500, right = 400, plot = TRUE) # trim edges
+image_export(img_s001, "./images_trimmed/img_s001.jpg")
+
+img_s002 <- image_import("./photos_day49/s002.JPG")
+img_s002 <- image_trim(img_s002, top = 700, bottom = 700, left = 900, right = 400, plot = TRUE) # trim edges
+image_export(img_s002, "./images_trimmed/img_s002.jpg")
+
+img_s003 <- image_import("./photos_day49/s003.JPG")
+img_s003 <- image_trim(img_s003, top = 500, bottom = 800, left = 1000, right = 700, plot = TRUE) # trim edges
+image_export(img_s003, "./images_trimmed/img_s003.jpg")
+
+img_s004 <- image_import("./photos_day49/s004.JPG")
+img_s004 <- image_trim(img_s004, top = 700, bottom = 500, left = 800, right = 500, plot = TRUE) # trim edges
+image_export(img_s004, "./images_trimmed/img_s004.jpg")
+
+img_s005 <- image_import("./photos_day49/s005.JPG")
+img_s005 <- image_trim(img_s005, top = 300, bottom = 500, left = 900, right = 500, plot = TRUE) # trim edges
+image_export(img_s005, "./images_trimmed/img_s005.jpg")
+
+img_s006 <- image_import("./photos_day49/s006.JPG")
+img_s006 <- image_trim(img_s006, top = 500, bottom = 900, left = 900, right = 900, plot = TRUE) # trim edges
+image_export(img_s006, "./images_trimmed/img_s006.jpg")
+
+img_s007 <- image_import("./photos_day49/s007.JPG")
+img_s007 <- image_trim(img_s007, top = 500, bottom = 800, left = 800, right = 500, plot = TRUE) # trim edges
+image_export(img_s007, "./images_trimmed/img_s007.jpg")
+
+img_s008 <- image_import("./photos_day49/s008.JPG")
+img_s008 <- image_trim(img_s008, top = 500, bottom = 500, left = 800, right = 500, plot = TRUE) # trim edges
+image_export(img_s008, "./images_trimmed/img_s008.jpg")
+
+img_s009 <- image_import("./photos_day49/s009.JPG")
+img_s009 <- image_trim(img_s009, top = 500, bottom = 600, left = 800, right = 600, plot = TRUE) # trim edges
+image_export(img_s009, "./images_trimmed/img_s009.jpg")
+
+img_s010 <- image_import("./photos_day49/s010.JPG")
+img_s010 <- image_trim(img_s010, top = 400, bottom = 400, left = 760, right = 260, plot = TRUE) # trim edges
+image_export(img_s010, "./images_trimmed/img_s010.jpg")
+
+img_s011 <- image_import("./photos_day49/s011.JPG")
+img_s011 <- image_trim(img_s011, top = 700, bottom = 700, left = 900, right = 900, plot = TRUE) # trim edges
+image_export(img_s011, "./images_trimmed/img_s011.jpg")
+
+img_s012 <- image_import("./photos_day49/s012.JPG")
+img_s012 <- image_trim(img_s012, top = 1000, bottom = 700, left = 900, right = 500, plot = TRUE) # trim edges
+image_export(img_s012, "./images_trimmed/img_s012.jpg")
+
+img_s013 <- image_import("./photos_day49/s013.JPG")
+img_s013 <- image_trim(img_s013, top = 700, bottom = 700, left = 800, right = 400, plot = TRUE) # trim edges
+image_export(img_s013, "./images_trimmed/img_s013.jpg")
+
+img_s014 <- image_import("./photos_day49/s014.JPG")
+img_s014 <- image_trim(img_s014, top = 500, bottom = 550, left = 1100, right = 300, plot = TRUE) # trim edges
+image_export(img_s014, "./images_trimmed/img_s014.jpg")
+
+img_s015 <- image_import("./photos_day49/s015.JPG")
+img_s015 <- image_trim(img_s015, top = 500, bottom = 700, left = 1100, right = 1000, plot = TRUE) # trim edges
+image_export(img_s015, "./images_trimmed/img_s015.jpg")
+
+img_s016 <- image_import("./photos_day49/s016.JPG")
+img_s016 <- image_trim(img_s016, top =600, bottom = 400, left = 1000, right = 600, plot = TRUE) # trim edges
+image_export(img_s016, "./images_trimmed/img_s016.jpg")
+
+img_s017 <- image_import("./photos_day49/s017.JPG")
+img_s017 <- image_trim(img_s017, top = 500, bottom = 700, left = 800, right = 900, plot = TRUE) # trim edges
+image_export(img_s017, "./images_trimmed/img_s017.jpg")
+
+img_s018 <- image_import("./photos_day49/s018.JPG")
+img_s018 <- image_trim(img_s018, top = 1100, bottom = 400, left = 900, right = 500, plot = TRUE) # trim edges
+image_export(img_s018, "./images_trimmed/img_s018.jpg")
+
+img_s019 <- image_import("./photos_day49/s019.JPG")
+img_s019 <- image_trim(img_s019, top = 500, bottom = 800, left = 1200, right = 700, plot = TRUE) # trim edges
+image_export(img_s019, "./images_trimmed/img_s019.jpg")
+
+img_s020 <- image_import("./photos_day49/s020.JPG")
+img_s020 <- image_trim(img_s020, top = 600, bottom = 400, left = 1100, right = 800, plot = TRUE) # trim edges
+image_export(img_s020, "./images_trimmed/img_s020.jpg")
+
+img_s021 <- image_import("./photos_day49/s021.JPG")
+img_s021 <- image_trim(img_s021, top = 600, bottom = 800, left = 900, right = 400, plot = TRUE) # trim edges
+image_export(img_s021, "./images_trimmed/img_s021.jpg")
+
+img_s022 <- image_import("./photos_day49/s022.JPG")
+img_s022 <- image_trim(img_s022, top = 500, bottom = 700, left = 900, right = 900, plot = TRUE) # trim edges
+image_export(img_s022, "./images_trimmed/img_s022.jpg")
+
+img_s023 <- image_import("./photos_day49/s023.JPG")
+img_s023 <- image_trim(img_s023, top = 700, bottom = 900, left = 800, right = 800, plot = TRUE) # trim edges
+image_export(img_s023, "./images_trimmed/img_s023.jpg")
+
+img_s024 <- image_import("./photos_day49/s024.JPG")
+img_s024 <- image_trim(img_s024, top = 300, bottom = 800, left = 1100, right = 800, plot = TRUE) # trim edges
+image_export(img_s024, "./images_trimmed/img_s024.jpg")
+
+img_s025 <- image_import("./photos_day49/s025.JPG")
+img_s025 <- image_trim(img_s025, top = 600, bottom = 900, left = 1400, right = 600, plot = TRUE) # trim edges
+image_export(img_s025, "./images_trimmed/img_s025.jpg")
+
+img_s026 <- image_import("./photos_day49/s026.JPG")
+img_s026 <- image_trim(img_s026, top = 600, bottom = 600, left = 600, right = 400, plot = TRUE) # trim edges
+image_export(img_s026, "./images_trimmed/img_s026.jpg")
+
+img_s027 <- image_import("./photos_day49/s027.JPG")
+img_s027 <- image_trim(img_s027, top = 600, bottom = 300, left = 1000, right = 700, plot = TRUE) # trim edges
+image_export(img_s027, "./images_trimmed/img_s027.jpg")
+
+img_s028 <- image_import("./photos_day49/s028.JPG")
+img_s028 <- image_trim(img_s028, top = 400, bottom = 400, left = 900, right = 500, plot = TRUE) # trim edges
+image_export(img_s028, "./images_trimmed/img_s028.jpg")
+
+img_s029 <- image_import("./photos_day49/s029.JPG")
+img_s029 <- image_trim(img_s029, top = 700, bottom = 700, left = 1100, right = 800, plot = TRUE) # trim edges
+image_export(img_s029, "./images_trimmed/img_s029.jpg")
+
+img_s030 <- image_import("./photos_day49/s030.JPG")
+img_s030 <- image_trim(img_s030, top = 800, bottom = 600, left = 800, right = 900, plot = TRUE) # trim edges
+image_export(img_s030, "./images_trimmed/img_s030.jpg")
+
+img_s031 <- image_import("./photos_day49/s031.JPG")
+img_s031 <- image_trim(img_s031, top = 500, bottom = 800, left = 900, right = 600, plot = TRUE) # trim edges
+image_export(img_s031, "./images_trimmed/img_s031.jpg")
+
+img_s032 <- image_import("./photos_day49/s032.JPG")
+img_s032 <- image_trim(img_s032, top = 500, bottom = 500, left = 700, right = 400, plot = TRUE) # trim edges
+image_export(img_s032, "./images_trimmed/img_s032.jpg")
+
+img_s033 <- image_import("./photos_day49/s033.JPG")
+img_s033 <- image_trim(img_s033, top = 600, bottom = 500, left = 600, right = 700, plot = TRUE) # trim edges
+image_export(img_s033, "./images_trimmed/img_s033.jpg")
+
+#img_s034 <- image_import("./photos_day49/s034.JPG") #empty image - accidentally lost the sample before taking photo
+#img_s034 <- image_trim(img_s034, top = 500, bottom = 700, left = 500, right = 400, plot = TRUE) # trim edges
+#image_export(img_s034, "./images_trimmed/img_s034.jpg")
+
+img_s035 <- image_import("./photos_day49/s035.JPG")
+img_s035 <- image_trim(img_s035, top = 400, bottom = 600, left = 1000, right = 600, plot = TRUE) # trim edges
+image_export(img_s035, "./images_trimmed/img_s035.jpg")
+
+img_s036 <- image_import("./photos_day49/s036.JPG")
+img_s036 <- image_trim(img_s036, top = 600, bottom = 700, left = 600, right = 600, plot = TRUE) # trim edges
+image_export(img_s036, "./images_trimmed/img_s036.jpg")
+
+img_s037 <- image_import("./photos_day49/s037.JPG")
+img_s037 <- image_trim(img_s037, top = 500, bottom = 900, left = 1000, right = 1000, plot = TRUE) # trim edges
+image_export(img_s037, "./images_trimmed/img_s037.jpg")
+
+img_s038 <- image_import("./photos_day49/s038.JPG")
+img_s038 <- image_trim(img_s038, top = 800, bottom = 500, left = 700, right = 600, plot = TRUE) # trim edges
+image_export(img_s038, "./images_trimmed/img_s038.jpg")
+
+img_s039 <- image_import("./photos_day49/s039.JPG")
+img_s039 <- image_trim(img_s039, top = 800, bottom = 300, left = 600, right = 500, plot = TRUE) # trim edges
+image_export(img_s039, "./images_trimmed/img_s039.jpg")
+
+img_s040 <- image_import("./photos_day49/s040.JPG")
+img_s040 <- image_trim(img_s040, top = 800, bottom = 600, left = 800, right = 500, plot = TRUE) # trim edges
+image_export(img_s040, "./images_trimmed/img_s040.jpg")
+
+img_s041 <- image_import("./photos_day49/s041.JPG")
+img_s041 <- image_trim(img_s041, top = 800, bottom = 600, left = 1000, right = 400, plot = TRUE) # trim edges
+image_export(img_s041, "./images_trimmed/img_s041.jpg")
+
+img_s042 <- image_import("./photos_day49/s042.JPG")
+img_s042 <- image_trim(img_s042, top = 700, bottom = 400, left = 1000, right = 600, plot = TRUE) # trim edges
+image_export(img_s042, "./images_trimmed/img_s042.jpg")
+
+img_s043 <- image_import("./photos_day49/s043.JPG")
+img_s043 <- image_trim(img_s043, top = 500, bottom = 500, left = 900, right = 700, plot = TRUE) # trim edges
+image_export(img_s043, "./images_trimmed/img_s043.jpg")
+
+img_s044 <- image_import("./photos_day49/s044.JPG")
+img_s044 <- image_trim(img_s044, top = 600, bottom = 550, left = 750, right = 400, plot = TRUE) # trim edges
+image_export(img_s044, "./images_trimmed/img_s044.jpg")
+
+img_s045 <- image_import("./photos_day49/s045.JPG")
+img_s045 <- image_trim(img_s045, top = 800, bottom = 700, left = 1000, right = 500, plot = TRUE) # trim edges
+image_export(img_s045, "./images_trimmed/img_s045.jpg")
+
+img_s046 <- image_import("./photos_day49/s046.JPG")
+img_s046 <- image_trim(img_s046, top = 500, bottom = 700, left = 500, right = 400, plot = TRUE) # trim edges
+image_export(img_s046, "./images_trimmed/img_s046.jpg")
+
+img_s047 <- image_import("./photos_day49/s047.JPG")
+img_s047 <- image_trim(img_s047, top = 700, bottom = 600, left = 1000, right = 600, plot = TRUE) # trim edges
+image_export(img_s047, "./images_trimmed/img_s047.jpg")
+
+img_s048 <- image_import("./photos_day49/s048.JPG")
+img_s048 <- image_trim(img_s048, top = 400, bottom = 700, left = 900, right = 450, plot = TRUE) # trim edges
+image_export(img_s048, "./images_trimmed/img_s048.jpg")
+
+img_s049 <- image_import("./photos_day49/s049.JPG")
+img_s049 <- image_trim(img_s049, top = 900, bottom = 800, left = 900, right = 900, plot = TRUE) # trim edges
+image_export(img_s049, "./images_trimmed/img_s049.jpg")
+
+img_s050 <- image_import("./photos_day49/s050.JPG")
+img_s050 <- image_trim(img_s050, top = 600, bottom = 500, left = 700, right = 800, plot = TRUE) # trim edges
+image_export(img_s050, "./images_trimmed/img_s050.jpg")
+
+img_s051 <- image_import("./photos_day49/s051.JPG")
+img_s051 <- image_trim(img_s051, top = 500, bottom = 500, left = 1000, right = 900, plot = TRUE) # trim edges
+image_export(img_s051, "./images_trimmed/img_s051.jpg")
+
+img_s052 <- image_import("./photos_day49/s052.JPG")
+img_s052 <- image_trim(img_s052, top = 800, bottom = 500, left = 900, right = 400, plot = TRUE) # trim edges
+image_export(img_s052, "./images_trimmed/img_s052.jpg")
+
+img_s053 <- image_import("./photos_day49/s053.JPG")
+img_s053 <- image_trim(img_s053, top = 500, bottom = 600, left = 900, right = 800, plot = TRUE) # trim edges
+image_export(img_s053, "./images_trimmed/img_s053.jpg")
+
+img_s054 <- image_import("./photos_day49/s054.JPG")
+img_s054 <- image_trim(img_s054, top = 200, bottom = 800, left = 700, right = 1100, plot = TRUE) # trim edges
+image_export(img_s054, "./images_trimmed/img_s054.jpg")
+
+img_s055 <- image_import("./photos_day49/s055.JPG")
+img_s055 <- image_trim(img_s055, top = 500, bottom = 700, left = 1000, right = 700, plot = TRUE) # trim edges
+image_export(img_s055, "./images_trimmed/img_s055.jpg")
+
+img_s056 <- image_import("./photos_day49/s056.JPG")
+img_s056 <- image_trim(img_s056, top = 600, bottom = 800, left = 800, right = 500, plot = TRUE) # trim edges
+image_export(img_s056, "./images_trimmed/img_s056.jpg")
+
+img_s057 <- image_import("./photos_day49/s057.JPG")
+img_s057 <- image_trim(img_s057, top = 600, bottom = 500, left = 900, right = 700, plot = TRUE) # trim edges
+image_export(img_s057, "./images_trimmed/img_s057.jpg")
+
+img_s058 <- image_import("./photos_day49/s058.JPG")
+img_s058 <- image_trim(img_s058, top = 500, bottom = 800, left = 600, right = 1100, plot = TRUE) # trim edges
+image_export(img_s058, "./images_trimmed/img_s058.jpg")
+
+img_s059 <- image_import("./photos_day49/s059.JPG")
+img_s059 <- image_trim(img_s059, top = 400, bottom = 400, left = 800, right = 800, plot = TRUE) # trim edges
+image_export(img_s059, "./images_trimmed/img_s059.jpg")
+
+img_s060 <- image_import("./photos_day49/s060.JPG")
+img_s060 <- image_trim(img_s060, top = 450, bottom = 800, left = 1300, right = 550, plot = TRUE) # trim edges
+image_export(img_s060, "./images_trimmed/img_s060.jpg")
+
+img_s061 <- image_import("./photos_day49/s061.JPG")
+img_s061 <- image_trim(img_s061, top = 800, bottom = 700, left = 600, right = 600, plot = TRUE) # trim edges
+image_export(img_s061, "./images_trimmed/img_s061.jpg")
+
+img_s062 <- image_import("./photos_day49/s062.JPG")
+img_s062 <- image_trim(img_s062, top = 500, bottom = 600, left = 1000, right = 700, plot = TRUE) # trim edges
+image_export(img_s062, "./images_trimmed/img_s062.jpg")
+
+img_s063 <- image_import("./photos_day49/s063.JPG")
+img_s063 <- image_trim(img_s063, top = 800, bottom = 600, left = 800, right = 300, plot = TRUE) # trim edges
+image_export(img_s063, "./images_trimmed/img_s063.jpg")
+
+img_s064 <- image_import("./photos_day49/s064.JPG")
+img_s064 <- image_trim(img_s064, top = 600, bottom = 600, left = 700, right = 400, plot = TRUE) # trim edges
+image_export(img_s064, "./images_trimmed/img_s064.jpg")
+
+img_s065 <- image_import("./photos_day49/s065.JPG")
+img_s065 <- image_trim(img_s065, top = 500, bottom = 700, left = 1000, right = 400, plot = TRUE) # trim edges
+image_export(img_s065, "./images_trimmed/img_s065.jpg")
+
+img_s066 <- image_import("./photos_day49/s066.JPG")
+img_s066 <- image_trim(img_s066, top = 900, bottom = 700, left = 800, right = 500, plot = TRUE) # trim edges
+image_export(img_s066, "./images_trimmed/img_s066.jpg")
+
+img_s067 <- image_import("./photos_day49/s067.JPG")
+img_s067 <- image_trim(img_s067, top = 800, bottom = 800, left = 800, right = 600, plot = TRUE) # trim edges
+image_export(img_s067, "./images_trimmed/img_s067.jpg")
+
+img_s068 <- image_import("./photos_day49/s068.JPG")
+img_s068 <- image_trim(img_s068, top = 600, bottom = 700, left = 1100, right = 800, plot = TRUE) # trim edges
+image_export(img_s068, "./images_trimmed/img_s068.jpg")
+
+img_s069 <- image_import("./photos_day49/s069.JPG")
+img_s069 <- image_trim(img_s069, top = 650, bottom = 450, left = 900, right = 600, plot = TRUE) # trim edges
+image_export(img_s069, "./images_trimmed/img_s069.jpg")
+
+img_s070 <- image_import("./photos_day49/s070.JPG")
+img_s070 <- image_trim(img_s070, top =900, bottom = 800, left = 800, right = 700, plot = TRUE) # trim edges
+image_export(img_s070, "./images_trimmed/img_s070.jpg")
+
+img_s071 <- image_import("./photos_day49/s071.JPG")
+img_s071 <- image_trim(img_s071, top = 1000, bottom = 820, left = 900, right = 800, plot = TRUE) # trim edges
+image_export(img_s071, "./images_trimmed/img_s071.jpg")
+
+img_s072 <- image_import("./photos_day49/s072.JPG")
+img_s072 <- image_trim(img_s072, top = 550, bottom = 600, left = 700, right = 600, plot = TRUE) # trim edges
+image_export(img_s072, "./images_trimmed/img_s072.jpg")
+
+img_s073 <- image_import("./photos_day49/s073.JPG")
+img_s073 <- image_trim(img_s073, top = 900, bottom = 800, left = 700, right = 600, plot = TRUE) # trim edges
+image_export(img_s073, "./images_trimmed/img_s073.jpg")
+
+img_s074 <- image_import("./photos_day49/s074.JPG")
+img_s074 <- image_trim(img_s074, top = 700, bottom = 700, left = 1200, right = 800, plot = TRUE) # trim edges
+image_export(img_s074, "./images_trimmed/img_s074.jpg")
+
+img_s075 <- image_import("./photos_day49/s075.JPG")
+img_s075 <- image_trim(img_s075, top = 500, bottom = 600, left = 800, right = 900, plot = TRUE) # trim edges
+image_export(img_s075, "./images_trimmed/img_s075.jpg")
+
+img_s076 <- image_import("./photos_day49/s076.JPG")
+img_s076 <- image_trim(img_s076, top = 900, bottom = 400, left = 800, right = 450, plot = TRUE) # trim edges
+image_export(img_s076, "./images_trimmed/img_s076.jpg")
+
+img_s077 <- image_import("./photos_day49/s077.JPG")
+img_s077 <- image_trim(img_s077, top = 400, bottom = 400, left = 800, right = 600, plot = TRUE) # trim edges
+image_export(img_s077, "./images_trimmed/img_s077.jpg")
+
+img_s078 <- image_import("./photos_day49/s078.JPG")
+img_s078 <- image_trim(img_s078, top = 600, bottom = 600, left = 1000, right = 600, plot = TRUE) # trim edges
+image_export(img_s078, "./images_trimmed/img_s078.jpg")
+
+img_s079 <- image_import("./photos_day49/s079.JPG")
+img_s079 <- image_trim(img_s079, top = 700, bottom = 800, left = 1100, right = 700, plot = TRUE) # trim edges
+image_export(img_s079, "./images_trimmed/img_s079.jpg")
+
+img_s080 <- image_import("./photos_day49/s080.JPG")
+img_s080 <- image_trim(img_s080, top = 700, bottom = 500, left = 840, right = 400, plot = TRUE) # trim edges
+image_export(img_s080, "./images_trimmed/img_s080.jpg")
+
+img_s081 <- image_import("./photos_day49/s081.JPG")
+img_s081 <- image_trim(img_s081, top = 500, bottom = 500, left = 1100, right = 600, plot = TRUE) # trim edges
+image_export(img_s081, "./images_trimmed/img_s081.jpg")
+
+img_s082 <- image_import("./photos_day49/s082.JPG")
+img_s082 <- image_trim(img_s082, top = 800, bottom = 400, left = 1200, right = 800, plot = TRUE) # trim edges
+image_export(img_s082, "./images_trimmed/img_s082.jpg")
+
+img_s083 <- image_import("./photos_day49/s083.JPG")
+img_s083 <- image_trim(img_s083, top = 700, bottom = 500, left = 1100, right = 900, plot = TRUE) # trim edges
+image_export(img_s083, "./images_trimmed/img_s083.jpg")
+
+img_s084 <- image_import("./photos_day49/s084.JPG")
+img_s084 <- image_trim(img_s084, top = 750, bottom = 430, left = 740, right = 400, plot = TRUE) # trim edges
+image_export(img_s084, "./images_trimmed/img_s084.jpg")
+
+img_s085 <- image_import("./photos_day49/s085.JPG")
+img_s085 <- image_trim(img_s085, top = 800, bottom = 700, left = 1200, right = 500, plot = TRUE) # trim edges
+image_export(img_s085, "./images_trimmed/img_s085.jpg")
+
+img_s086 <- image_import("./photos_day49/s086.JPG")
+img_s086 <- image_trim(img_s086, top = 600, bottom = 900, left = 1500, right = 800, plot = TRUE) # trim edges
+image_export(img_s086, "./images_trimmed/img_s086.jpg")
+
+img_s087 <- image_import("./photos_day49/s087.JPG")
+img_s087 <- image_trim(img_s087, top = 600, bottom = 800, left = 1200, right = 700, plot = TRUE) # trim edges
+image_export(img_s087, "./images_trimmed/img_s087.jpg")
+
+img_s088 <- image_import("./photos_day49/s088.JPG")
+img_s088 <- image_trim(img_s088, top = 600, bottom = 900, left = 900, right = 600, plot = TRUE) # trim edges
+image_export(img_s088, "./images_trimmed/img_s088.jpg")
+
+img_s089 <- image_import("./photos_day49/s089.JPG")
+img_s089 <- image_trim(img_s089, top = 800, bottom = 600, left = 1200, right = 600, plot = TRUE) # trim edges
+image_export(img_s089, "./images_trimmed/img_s089.jpg")
+
+img_s090 <- image_import("./photos_day49/s090.JPG")
+img_s090 <- image_trim(img_s090, top = 900, bottom = 600, left = 1120, right = 900, plot = TRUE) # trim edges
+image_export(img_s090, "./images_trimmed/img_s090.jpg")
+
+img_s091 <- image_import("./photos_day49/s091.JPG")
+img_s091 <- image_trim(img_s091, top = 700, bottom = 700, left = 1500, right = 700, plot = TRUE) # trim edges
+image_export(img_s091, "./images_trimmed/img_s091.jpg")
+
+img_s092 <- image_import("./photos_day49/s092.JPG")
+img_s092 <- image_trim(img_s092, top = 700, bottom = 900, left = 900, right = 600, plot = TRUE) # trim edges
+image_export(img_s092, "./images_trimmed/img_s092.jpg")
+
+img_s093 <- image_import("./photos_day49/s093.JPG")
+img_s093 <- image_trim(img_s093, top = 700, bottom = 700, left = 1300, right = 1000, plot = TRUE) # trim edges
+image_export(img_s093, "./images_trimmed/img_s093.jpg")
+
+img_s094 <- image_import("./photos_day49/s094.JPG")
+img_s094 <- image_trim(img_s094, top = 1000, bottom = 700, left = 1000, right = 600, plot = TRUE) # trim edges
+image_export(img_s094, "./images_trimmed/img_s094.jpg")
+
+img_s095 <- image_import("./photos_day49/s095.JPG")
+img_s095 <- image_trim(img_s095, top = 800, bottom = 900, left = 900, right = 600, plot = TRUE) # trim edges
+image_export(img_s095, "./images_trimmed/img_s095.jpg")
+
+img_s096 <- image_import("./photos_day49/s096.JPG")
+img_s096 <- image_trim(img_s096, top = 1000, bottom = 600, left = 700, right = 600, plot = TRUE) # trim edges
+image_export(img_s096, "./images_trimmed/img_s096.jpg")
+
+img_s097 <- image_import("./photos_day49/s097.JPG")
+img_s097 <- image_trim(img_s097, top = 700, bottom = 600, left = 1000, right = 800, plot = TRUE) # trim edges
+image_export(img_s097, "./images_trimmed/img_s097.jpg")
+
+img_s098 <- image_import("./photos_day49/s098.JPG")
+img_s098 <- image_trim(img_s098, top = 900, bottom = 700, left = 1000, right = 500, plot = TRUE) # trim edges
+image_export(img_s098, "./images_trimmed/img_s098.jpg")
+
+img_s099 <- image_import("./photos_day49/s099.JPG")
+img_s099 <- image_trim(img_s099, top = 600, bottom = 700, left = 1000, right = 800, plot = TRUE) # trim edges
+image_export(img_s099, "./images_trimmed/img_s099.jpg")
+
+img_s100 <- image_import("./photos_day49/s100.JPG")
+img_s100 <- image_trim(img_s100, top = 400, bottom = 900, left = 1300, right = 800, plot = TRUE) # trim edges
+image_export(img_s100, "./images_trimmed/img_s100.jpg")
+
+img_s101 <- image_import("./photos_day49/s101.JPG")
+img_s101 <- image_trim(img_s101, top = 500, bottom = 800, left = 700, right = 800, plot = TRUE) # trim edges
+image_export(img_s101, "./images_trimmed/img_s101.jpg")
+
+img_s102 <- image_import("./photos_day49/s102.JPG")
+img_s102 <- image_trim(img_s102, top = 700, bottom = 900, left = 1000, right = 700, plot = TRUE) # trim edges
+image_export(img_s102, "./images_trimmed/img_s102.jpg")
+
+img_s103 <- image_import("./photos_day49/s103.JPG")
+img_s103 <- image_trim(img_s103, top = 500, bottom = 800, left = 1400, right = 700, plot = TRUE) # trim edges
+image_export(img_s103, "./images_trimmed/img_s103.jpg")
+
+img_s104 <- image_import("./photos_day49/s104.JPG")
+img_s104 <- image_trim(img_s104, top = 700, bottom = 600, left = 1000, right = 700, plot = TRUE) # trim edges
+image_export(img_s104, "./images_trimmed/img_s104.jpg")
+
+img_s105 <- image_import("./photos_day49/s105.JPG")
+img_s105 <- image_trim(img_s105, top = 500, bottom = 700, left = 1100, right = 800, plot = TRUE) # trim edges
+image_export(img_s105, "./images_trimmed/img_s105.jpg")
+
+img_s106 <- image_import("./photos_day49/s106.JPG")
+img_s106 <- image_trim(img_s106, top = 600, bottom = 900, left = 900, right = 600, plot = TRUE) # trim edges
+image_export(img_s106, "./images_trimmed/img_s106.jpg")
+
+img_s107 <- image_import("./photos_day49/s107.JPG")
+img_s107 <- image_trim(img_s107, top = 900, bottom = 600, left = 1200, right = 800, plot = TRUE) # trim edges
+image_export(img_s107, "./images_trimmed/img_s107.jpg")
+
+img_s108 <- image_import("./photos_day49/s108.JPG")
+img_s108 <- image_trim(img_s108, top = 500, bottom = 500, left = 600, right = 600, plot = TRUE) # trim edges
+image_export(img_s108, "./images_trimmed/img_s108.jpg")
+
+img_s109 <- image_import("./photos_day49/s109.JPG")
+img_s109 <- image_trim(img_s109, top = 900, bottom = 300, left = 1200, right = 900, plot = TRUE) # trim edges
+image_export(img_s109, "./images_trimmed/img_s109.jpg")
+
+img_s110 <- image_import("./photos_day49/s110.JPG")
+img_s110 <- image_trim(img_s110, top = 300, bottom = 500, left = 1200, right = 600, plot = TRUE) # trim edges
+image_export(img_s110, "./images_trimmed/img_s110.jpg")
+
+img_s111 <- image_import("./photos_day49/s111.JPG")
+img_s111 <- image_trim(img_s111, top = 1000, bottom = 800, left = 900, right = 700, plot = TRUE) # trim edges
+image_export(img_s111, "./images_trimmed/img_s111.jpg")
+
+img_s112 <- image_import("./photos_day49/s112.JPG")
+img_s112 <- image_trim(img_s112, top = 700, bottom = 500, left = 900, right = 500, plot = TRUE) # trim edges
+image_export(img_s112, "./images_trimmed/img_s112.jpg")
+
+img_s113 <- image_import("./photos_day49/s113.JPG")
+img_s113 <- image_trim(img_s113, top = 600, bottom = 800, left = 1100, right = 300, plot = TRUE) # trim edges
+image_export(img_s113, "./images_trimmed/img_s113.jpg")
+
+img_s114 <- image_import("./photos_day49/s114.JPG")
+img_s114 <- image_trim(img_s114, top = 500, bottom = 600, left = 1100, right = 700, plot = TRUE) # trim edges
+image_export(img_s114, "./images_trimmed/img_s114.jpg")
+
+img_s115 <- image_import("./photos_day49/s115.JPG")
+img_s115 <- image_trim(img_s115, top = 700, bottom = 700, left = 1000, right = 500, plot = TRUE) # trim edges
+image_export(img_s115, "./images_trimmed/img_s115.jpg")
+
+img_s116 <- image_import("./photos_day49/s116.JPG")
+img_s116 <- image_trim(img_s116, top = 700, bottom = 800, left = 800, right = 600, plot = TRUE) # trim edges
+image_export(img_s116, "./images_trimmed/img_s116.jpg")
+
+img_s117 <- image_import("./photos_day49/s117.JPG")
+img_s117 <- image_trim(img_s117, top = 500, bottom = 900, left = 900, right = 1300, plot = TRUE) # trim edges
+image_export(img_s117, "./images_trimmed/img_s117.jpg")
+
+img_s118 <- image_import("./photos_day49/s118.JPG")
+img_s118 <- image_trim(img_s118, top = 1000, bottom = 600, left = 1100, right = 600, plot = TRUE) # trim edges
+image_export(img_s118, "./images_trimmed/img_s118.jpg")
+
+img_s119 <- image_import("./photos_day49/s119.JPG")
+img_s119 <- image_trim(img_s119, top = 700, bottom = 600, left = 800, right = 600, plot = TRUE) # trim edges
+image_export(img_s119, "./images_trimmed/img_s119.jpg")
+
+img_s120 <- image_import("./photos_day49/s120.JPG")
+img_s120 <- image_trim(img_s120, top = 500, bottom = 500, left = 900, right = 700, plot = TRUE) # trim edges
+image_export(img_s120, "./images_trimmed/img_s120.jpg")
+
+img_s121 <- image_import("./photos_day49/s121.JPG")
+img_s121 <- image_trim(img_s121, top = 800, bottom = 400, left = 1300, right = 500, plot = TRUE) # trim edges
+image_export(img_s121, "./images_trimmed/img_s121.jpg")
+
+img_s122 <- image_import("./photos_day49/s122.JPG")
+img_s122 <- image_trim(img_s122, top = 300, bottom = 600, left = 900, right = 800, plot = TRUE) # trim edges
+image_export(img_s122, "./images_trimmed/img_s122.jpg")
+
+img_s123 <- image_import("./photos_day49/s123.JPG")
+img_s123 <- image_trim(img_s123, top = 900, bottom = 900, left = 900, right = 500, plot = TRUE) # trim edges
+image_export(img_s123, "./images_trimmed/img_s123.jpg")
+
+img_s124 <- image_import("./photos_day49/s124.JPG")
+img_s124 <- image_trim(img_s124, top = 400, bottom = 500, left = 1200, right = 900, plot = TRUE) # trim edges
+image_export(img_s124, "./images_trimmed/img_s124.jpg")
+
+img_s125 <- image_import("./photos_day49/s125.JPG")
+img_s125 <- image_trim(img_s125, top = 700, bottom = 500, left = 700, right = 800, plot = TRUE) # trim edges
+image_export(img_s125, "./images_trimmed/img_s125.jpg")
+
+img_s126 <- image_import("./photos_day49/s126.JPG")
+img_s126 <- image_trim(img_s126, top = 300, bottom = 600, left = 1000, right = 800, plot = TRUE) # trim edges
+image_export(img_s126, "./images_trimmed/img_s126.jpg")
+
+img_s127 <- image_import("./photos_day49/s127.JPG")
+img_s127 <- image_trim(img_s127, top = 600, bottom = 800, left = 900, right = 500, plot = TRUE) # trim edges
+image_export(img_s127, "./images_trimmed/img_s127.jpg")
+
+img_s128 <- image_import("./photos_day49/s128.JPG")
+img_s128 <- image_trim(img_s128, top = 500, bottom = 700, left = 1400, right = 500, plot = TRUE) # trim edges
+image_export(img_s128, "./images_trimmed/img_s128.jpg")
+
+img_s129 <- image_import("./photos_day49/s129.JPG")
+img_s129 <- image_trim(img_s129, top = 800, bottom = 600, left = 700, right = 600, plot = TRUE) # trim edges
+image_export(img_s129, "./images_trimmed/img_s129.jpg")
+
+img_s130 <- image_import("./photos_day49/s130.JPG")
+img_s130 <- image_trim(img_s130, top = 500, bottom = 600, left = 800, right = 500, plot = TRUE) # trim edges
+image_export(img_s130, "./images_trimmed/img_s130.jpg")
+
+img_s131 <- image_import("./photos_day49/s131.JPG")
+img_s131 <- image_trim(img_s131, top = 700, bottom = 600, left = 800, right = 500, plot = TRUE) # trim edges
+image_export(img_s131, "./images_trimmed/img_s131.jpg")
+
+img_s132 <- image_import("./photos_day49/s132.JPG")
+img_s132 <- image_trim(img_s132, top = 600, bottom = 800, left = 1000, right = 800, plot = TRUE) # trim edges
+image_export(img_s132, "./images_trimmed/img_s132.jpg")
+
+img_s133 <- image_import("./photos_day49/s133.JPG")
+img_s133 <- image_trim(img_s133, top = 250, bottom = 600, left = 1100, right = 700, plot = TRUE) # trim edges
+image_export(img_s133, "./images_trimmed/img_s133.jpg")
+
+img_s134 <- image_import("./photos_day49/s134.JPG")
+img_s134 <- image_trim(img_s134, top = 800, bottom = 900, left = 1000, right = 700, plot = TRUE) # trim edges
+image_export(img_s134, "./images_trimmed/img_s134.jpg")
+
+img_s135 <- image_import("./photos_day49/s135.JPG")
+img_s135 <- image_trim(img_s135, top = 800, bottom = 700, left = 900, right = 600, plot = TRUE) # trim edges
+image_export(img_s135, "./images_trimmed/img_s135.jpg")
+
+img_s136 <- image_import("./photos_day49/s136.JPG")
+img_s136 <- image_trim(img_s136, top = 500, bottom = 1000, left = 1000, right = 900, plot = TRUE) # trim edges
+image_export(img_s136, "./images_trimmed/img_s136.jpg")
+
+img_s137 <- image_import("./photos_day49/s137.JPG")
+img_s137 <- image_trim(img_s137, top = 600, bottom = 800, left = 1200, right = 900, plot = TRUE) # trim edges
+image_export(img_s137, "./images_trimmed/img_s137.jpg")
+
+#img_s138 <- image_import("./photos_day49/s138.JPG") #sample lost earlier on
+#img_s138 <- image_trim(img_s138, top = 200, bottom = 200, left = 500, right = 400, plot = TRUE) # trim edges
+#image_export(img_s138, "./images_trimmed/img_s138.jpg")
+
+img_s139 <- image_import("./photos_day49/s139.JPG")
+img_s139 <- image_trim(img_s139, top = 300, bottom = 500, left = 1000, right = 900, plot = TRUE) # trim edges
+image_export(img_s139, "./images_trimmed/img_s139.jpg")
+
+img_s140 <- image_import("./photos_day49/s140.JPG")
+img_s140 <- image_trim(img_s140, top = 900, bottom = 500, left = 900, right = 1200, plot = TRUE) # trim edges
+image_export(img_s140, "./images_trimmed/img_s140.jpg")
+
+img_s141 <- image_import("./photos_day49/s141.JPG")
+img_s141 <- image_trim(img_s141, top = 800, bottom = 500, left = 700, right = 600, plot = TRUE) # trim edges
+image_export(img_s141, "./images_trimmed/img_s141.jpg")
+
+img_s142 <- image_import("./photos_day49/s142.JPG")
+img_s142 <- image_trim(img_s142, top = 700, bottom = 800, left = 600, right = 500, plot = TRUE) # trim edges
+image_export(img_s142, "./images_trimmed/img_s142.jpg")
+
+img_s143 <- image_import("./photos_day49/s143.JPG")
+img_s143 <- image_trim(img_s143, top = 700, bottom = 600, left = 800, right = 500, plot = TRUE) # trim edges
+image_export(img_s143, "./images_trimmed/img_s143.jpg")
+
+img_s144 <- image_import("./photos_day49/s144.JPG")
+img_s144 <- image_trim(img_s144, top = 500, bottom = 860, left = 800, right = 800, plot = TRUE) # trim edges
+image_export(img_s144, "./images_trimmed/img_s144.jpg")
+
+img_s145 <- image_import("./photos_day49/s145.JPG")
+img_s145 <- image_trim(img_s145, top = 500, bottom = 1000, left = 1600, right = 700, plot = TRUE) # trim edges
+image_export(img_s145, "./images_trimmed/img_s145.jpg")
+
+img_s146 <- image_import("./photos_day49/s146.JPG")
+img_s146 <- image_trim(img_s146, top = 700, bottom = 600, left = 900, right = 700, plot = TRUE) # trim edges
+image_export(img_s146, "./images_trimmed/img_s146.jpg")
+
+img_s147 <- image_import("./photos_day49/s147.JPG")
+img_s147 <- image_trim(img_s147, top = 700, bottom = 500, left = 1200, right = 1100, plot = TRUE) # trim edges
+image_export(img_s147, "./images_trimmed/img_s147.jpg")
+
+img_s148 <- image_import("./photos_day49/s148.JPG")
+img_s148 <- image_trim(img_s148, top = 600, bottom = 600, left = 1200, right = 700, plot = TRUE) # trim edges
+image_export(img_s148, "./images_trimmed/img_s148.jpg")
+
+img_s149 <- image_import("./photos_day49/s149.JPG")
+img_s149 <- image_trim(img_s149, top = 900, bottom = 600, left = 900, right = 600, plot = TRUE) # trim edges
+image_export(img_s149, "./images_trimmed/img_s149.jpg")
+
+img_s150 <- image_import("./photos_day49/s150.JPG")
+img_s150 <- image_trim(img_s150, top = 400, bottom = 400, left = 1100, right = 800, plot = TRUE) # trim edges
+image_export(img_s150, "./images_trimmed/img_s150.jpg")
+
+img_s151 <- image_import("./photos_day49/s151.JPG")
+img_s151 <- image_trim(img_s151, top = 700, bottom = 500, left = 1100, right = 700, plot = TRUE) # trim edges
+image_export(img_s151, "./images_trimmed/img_s151.jpg")
+
+img_s152 <- image_import("./photos_day49/s152.JPG")
+img_s152 <- image_trim(img_s152, top = 850, bottom = 450, left = 700, right = 500, plot = TRUE) # trim edges
+image_export(img_s152, "./images_trimmed/img_s152.jpg")
+
+img_s153 <- image_import("./photos_day49/s153.JPG")
+img_s153 <- image_trim(img_s153, top = 1100, bottom = 500, left = 900, right = 600, plot = TRUE) # trim edges
+image_export(img_s153, "./images_trimmed/img_s153.jpg")
+
+img_s154 <- image_import("./photos_day49/s154.JPG")
+img_s154 <- image_trim(img_s154, top = 900, bottom = 800, left = 1000, right = 500, plot = TRUE) # trim edges
+image_export(img_s154, "./images_trimmed/img_s154.jpg")
+
+img_s155 <- image_import("./photos_day49/s155.JPG")
+img_s155 <- image_trim(img_s155, top = 300, bottom = 700, left = 1200, right = 900, plot = TRUE) # trim edges
+image_export(img_s155, "./images_trimmed/img_s155.jpg")
+
+img_s156 <- image_import("./photos_day49/s156.JPG")
+img_s156 <- image_trim(img_s156, top = 700, bottom = 400, left = 1200, right = 700, plot = TRUE) # trim edges
+image_export(img_s156, "./images_trimmed/img_s156.jpg")
+
+img_s157 <- image_import("./photos_day49/s157.JPG")
+img_s157 <- image_trim(img_s157, top = 1100, bottom = 600, left = 1200, right = 600, plot = TRUE) # trim edges
+image_export(img_s157, "./images_trimmed/img_s157.jpg")
+
+img_s158 <- image_import("./photos_day49/s158.JPG")
+img_s158 <- image_trim(img_s158, top = 900, bottom = 800, left = 900, right = 700, plot = TRUE) # trim edges
+image_export(img_s158, "./images_trimmed/img_s158.jpg")
+
+img_s159 <- image_import("./photos_day49/s159.JPG")
+img_s159 <- image_trim(img_s159, top = 600, bottom = 600, left = 1000, right = 700, plot = TRUE) # trim edges
+image_export(img_s159, "./images_trimmed/img_s159.jpg")
+
+img_s160 <- image_import("./photos_day49/s160.JPG")
+img_s160 <- image_trim(img_s160, top = 500, bottom = 400, left = 1000, right = 700, plot = TRUE) # trim edges
+image_export(img_s160, "./images_trimmed/img_s160.jpg")
+
+img_s161 <- image_import("./photos_day49/s161.JPG")
+img_s161 <- image_trim(img_s161, top = 700, bottom = 1000, left = 1400, right = 1100, plot = TRUE) # trim edges
+image_export(img_s161, "./images_trimmed/img_s161.jpg")
+```
+
+
+Calculate pigmentation levels - Use sympmatic_area() function from pliman package to measure pigmentation in 159 samples (batch processing).    
+
+```{r analyse pigmentation, include = FALSE, eval = FALSE}
+
+## Set up palettes to control for background and distinguish light and dark leaf pigmentation
+#img_s080 <- image_import("./images_trimmed/img_s080.jpg")
+light <- image_import("./images_trimmed/light.jpg") #load light pigmentation pallette
+dark <- image_import("./images_trimmed/dark.jpg") #load dark pigmentation pallette
+background <- image_import("./images_trimmed/background.jpg") #load background colours pallette
+#image_combine(img_s161, light, dark, background)
+
+## Compute "pigmentation severity" - area in two classes of colours, light an dark (ignoring background):
+leafcolours <-
+    measure_disease(pattern = "img_s",
+                    img_symptoms = "dark",
+                    img_healthy = "light",
+                    img_background = "background",
+                    dir_original = "./images_trimmed/",
+                    dir_processed = paste0("./images_trimmed/", "/images_processed"),
+                    show_contour = FALSE,
+                    save_image = TRUE,
+                    parallel = TRUE)
+
+str(leafcolours)
+dim(leafcolours$severity) #159 values
+leaf_colorcat <- leafcolours$severity
+str(leaf_colorcat)
+leaf_colorcat$file_name <- leaf_colorcat$img
+
+# setdiff(dat$file_name, leaf_colorcat$file_name) #"img_s034" - empty photo (lost the plant),  NA - "img_s138"  - empty photo (lost the plant)
+# length(intersect(leaf_colorcat$file_name, dat$file_name)) #159 overlapping - final sample size
+
+write.csv2(leaf_colorcat, file = "./data/leafcolours_severity.csv")
+```
