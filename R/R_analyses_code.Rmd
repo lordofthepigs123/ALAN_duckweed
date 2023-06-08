@@ -77,7 +77,7 @@ Growth data was measured as weekly leaf counts (Day 0 - Day 49) and leaf area wa
 Load and prepare main growth data.   
 
 ```{r load data, include = TRUE, eval = TRUE}
-dat <- read_excel(here("data", "data_raw.xlsx"), sheet = 1)
+dat <- read_csv(here("data", "duckweed_data_main.csv"))
 #dim(dat) #161
 #names(dat)
 dat$group <- as.factor(dat$group) #convert to factor

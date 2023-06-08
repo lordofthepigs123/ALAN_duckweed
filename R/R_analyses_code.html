@@ -449,8 +449,16 @@ mean(light_night_control)</code></pre>
 <p>Growth data was measured as weekly leaf counts (Day 0 - Day 49) and
 leaf area was measured from photos taken on Day 28.</p>
 <p>Load and prepare main growth data.</p>
-<pre class="r"><code>dat &lt;- read_excel(here(&quot;data&quot;, &quot;data_raw.xlsx&quot;), sheet = 1)
-#dim(dat) #161
+<pre class="r"><code>dat &lt;- read_csv(here(&quot;data&quot;, &quot;duckweed_data_main.csv&quot;))</code></pre>
+<pre><code>## Rows: 161 Columns: 15
+## ── Column specification ────────────────────────────────────────────────────────
+## Delimiter: &quot;,&quot;
+## chr  (3): sample_code, group, file_name
+## dbl (12): sample_nr, day0_leaves, day7_leaves, day14_leaves, day21_leaves, d...
+## 
+## ℹ Use `spec()` to retrieve the full column specification for this data.
+## ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
+<pre class="r"><code>#dim(dat) #161
 #names(dat)
 dat$group &lt;- as.factor(dat$group) #convert to factor
 #levels(dat$group)
